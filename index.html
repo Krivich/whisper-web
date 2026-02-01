@@ -251,6 +251,17 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* Memory warning */
+        .memory-warning {
+            background: #fff3cd;
+            color: #856404;
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -296,6 +307,13 @@
             <div class="step-title">Декодирование аудио</div>
             <div class="step-desc">Извлечение аудиодорожки из файла</div>
             <div class="step-details" id="detail-decode" style="display: none;"></div>
+            <div class="live-timer" id="timer-decode" style="display: none;">
+                <span class="spinner-mini"></span>
+                <span id="timer-text-decode">⏱️ Прошло: 00:00</span>
+            </div>
+            <div class="memory-warning" id="memory-warning">
+                ⚠️ Декодирование больших файлов требует много памяти. Это нормально — подождите...
+            </div>
         </div>
     </div>
 
@@ -319,7 +337,7 @@
             </div>
             <div class="live-timer" id="timer-transcribe" style="display: none;">
                 <span class="spinner-mini"></span>
-                <span id="timer-text">⏱️ Прошло: 00:00</span>
+                <span id="timer-text-transcribe">⏱️ Прошло: 00:00</span>
             </div>
         </div>
     </div>
@@ -385,7 +403,7 @@
     // Шаги прогресса
     const steps = {
         model: { icon: 'icon-model', detail: 'detail-model', progress: 'progress-bar-model', container: 'progress-model' },
-        decode: { icon: 'icon-decode', detail: 'detail-decode' },
+        decode: { icon: 'icon-decode', detail: 'detail-decode', timer: 'timer-decode' },
         resample: { icon: 'icon-resample' }, // skipped
         transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe', timer: 'timer-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
@@ -413,10 +431,10 @@
     }
 
     // Таймер для длительных операций
-    function startTimer(timerId) {
+    function startTimer(timerId, timerTextId) {
         let seconds = 0;
         const timerEl = document.getElementById(timerId);
-        const timerText = document.getElementById('timer-text');
+        const timerText = document.getElementById(timerTextId);
         timerEl.style.display = 'flex';
 
         timerInterval = setInterval(() => {
@@ -424,6 +442,11 @@
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
             timerText.textContent = `⏱️ Прошло: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+            // Показать предупреждение о памяти после 10 секунд
+            if (seconds > 10 && timerId === 'timer-decode') {
+                document.getElementById('memory-warning').style.display = 'block';
+            }
         }, 1000);
     }
 
@@ -432,6 +455,7 @@
             clearInterval(timerInterval);
             timerInterval = null;
         }
+        document.getElementById('memory-warning').style.display = 'none';
     }
 
     function showStatus(msg, type = 'loading') {
@@ -476,15 +500,19 @@
 
     // Обработка аудио БЕЗ ресемплирования
     async function transcribeAudio(audioBuffer) {
-        // Шаг 2: Декодирование
-        setStep('decode', 'completed', `Успешно: ${audioBuffer.numberOfChannels} канала(ов), ${audioBuffer.sampleRate} Гц, ${audioBuffer.duration.toFixed(1)} сек`);
+        // Шаг 2: Декодирование — УЖЕ ЗАВЕРШЕНО
+        const channels = audioBuffer.numberOfChannels;
+        const sampleRate = audioBuffer.sampleRate;
+        const duration = audioBuffer.duration;
+        setStep('decode', 'completed', `Успешно: ${channels} канала(ов), ${sampleRate} Гц, ${duration.toFixed(1)} сек`);
+        stopTimer();
 
         // Шаг 3: Ресемплирование — ПРОПУЩЕН (выполняется внутри модели)
         setStep('resample', 'skipped');
 
         // Шаг 4: Распознавание — передаем сырые данные
         setStep('transcribe', 'active', 'Анализ речи...', 0);
-        startTimer('timer-transcribe');
+        startTimer('timer-transcribe', 'timer-text-transcribe');
 
         try {
             // Берем первый канал (или смешиваем если стерео)
@@ -502,7 +530,6 @@
             }
 
             // Адаптивные параметры для больших файлов
-            const duration = audioBuffer.duration;
             const chunkLength = duration > 180 ? 15 : (duration > 60 ? 20 : 30);
 
             const result = await transcriber(audioData, {
@@ -596,18 +623,30 @@
                 setStep('model', 'completed', 'Модель уже загружена', 100);
             }
 
-            // Шаг 2-4: Обработка аудио
-            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            showStatus('🔊 Декодирование аудио...', 'loading');
+            // Шаг 2: Декодирование аудио — ПОКАЗЫВАЕМ ЧТО НАЧАЛИ
+            setStep('decode', 'active', 'Декодирование файла...', 0);
+            startTimer('timer-decode', 'timer-text-decode');
+            showStatus('🔊 Декодирование аудио... это может занять время для больших файлов', 'loading');
+
+            // Создаем контекст и декодируем
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioContext = new AudioContext();
 
             const arrayBuffer = await selectedFile.arrayBuffer();
+
+            // Декодирование — это синхронная блокирующая операция
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-            // Проверка длительности
+            // Проверка длительности ПОСЛЕ декодирования
             if (audioBuffer.duration > 3600) { // > 1 час
+                stopTimer();
                 if (!confirm(`⚠️ Файл длится ${Math.floor(audioBuffer.duration/60)} минут.\nОбработка может занять очень много времени и памяти.\nПродолжить?`)) {
+                    // Сбросить шаг декодирования
+                    setStep('decode', 'pending');
                     return;
                 }
+                // Возобновить таймер для распознавания
+                startTimer('timer-decode', 'timer-text-decode');
             }
 
             const text = await transcribeAudio(audioBuffer);
