@@ -568,6 +568,19 @@
         document.getElementById('memory-warning').style.display = 'none';
     }
 
+    // Остановка таймера декодирования с полным сбросом
+    function stopDecodeTimer() {
+        stopTimer();
+        document.getElementById('timer-decode').style.display = 'none';
+        document.getElementById('memory-warning').style.display = 'none';
+    }
+
+    // Остановка таймера распознавания с полным сбросом
+    function stopTranscribeTimer() {
+        stopTimer();
+        document.getElementById('timer-transcribe').style.display = 'none';
+    }
+
     function showStatus(msg, type = 'loading') {
         statusEl.textContent = msg;
         statusEl.className = type === 'loading' ? 'status-loading' :
@@ -628,7 +641,7 @@
 
     // Обработка аудио БЕЗ ресемплирования
     async function transcribeAudio(audioBuffer) {
-        // Шаг 2: Декодирование — УЖЕ ЗАВЕРШЕНО
+        // Шаг 2: Декодирование — УЖЕ ЗАВЕРШЕНО, помечаем шаг как завершенный
         const channels = audioBuffer.numberOfChannels;
         const sampleRate = audioBuffer.sampleRate;
         const duration = audioBuffer.duration;
@@ -637,7 +650,7 @@
         log(`✅ Декодирование завершено: ${channels} канал(а), ${sampleRate} Гц, ${duration.toFixed(1)} сек`, 'success');
 
         setStep('decode', 'completed', `Успешно: ${channels} канала(ов), ${sampleRate} Гц, ${duration.toFixed(1)} сек`);
-        stopTimer();
+        stopDecodeTimer(); // <-- ВАЖНО: скрываем таймер декодирования
 
         // Шаг 3: Ресемплирование — ПРОПУЩЕН (выполняется внутри модели)
         log('⊘ Ресемплирование пропущено (выполняется внутри Whisper)', 'info');
@@ -696,16 +709,15 @@
             const transcribeEnd = Date.now();
             const transcribeTime = ((transcribeEnd - transcribeStart) / 1000).toFixed(1);
 
-            stopTimer();
+            stopTranscribeTimer(); // <-- ВАЖНО: скрываем таймер распознавания
             setStep('transcribe', 'completed', `Распознано ${result.text.length} символов`, 100);
-            document.getElementById('timer-transcribe').style.display = 'none';
 
             logMemory();
             log(`✅ Распознавание завершено за ${transcribeTime} сек (${result.text.length} символов)`, 'success');
 
             return result.text;
         } catch (err) {
-            stopTimer();
+            stopTranscribeTimer();
             setStep('transcribe', 'error');
             log(`❌ Ошибка распознавания: ${err.message}`, 'error');
             throw err;
@@ -824,14 +836,14 @@
             // Проверка длительности ПОСЛЕ декодирования
             if (audioBuffer.duration > 3600) { // > 1 час
                 log(`⚠️ Файл очень длинный: ${Math.floor(audioBuffer.duration/60)} минут`, 'warn');
-                stopTimer();
+                stopDecodeTimer(); // <-- Останавливаем таймер перед алертом
                 if (!confirm(`⚠️ Файл длится ${Math.floor(audioBuffer.duration/60)} минут.\nОбработка может занять очень много времени и памяти.\nПродолжить?`)) {
                     log('❌ Пользователь отменил обработку длинного файла', 'warn');
                     setStep('decode', 'pending');
                     return;
                 }
                 log('✅ Пользователь подтвердил обработку длинного файла', 'success');
-                startTimer('timer-decode', 'timer-text-decode');
+                // Таймер уже остановлен, не перезапускаем
             }
 
             const text = await transcribeAudio(audioBuffer);
