@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Web</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px; margin: 2rem auto; padding: 0 1rem;
+            line-height: 1.6;
+        }
+        h1 { color: #333; }
+        .upload-area {
+            border: 3px dashed #4CAF50;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            margin: 1rem 0;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover, .upload-area.dragover {
+            background: #f0f8f0;
+            border-color: #2E7D32;
+        }
+        .hidden { display: none; }
+        #status {
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+        }
+        .loading { background: #FFF3CD; color: #856404; }
+        .success { background: #D4EDDA; color: #155724; }
+        .error { background: #F8D7DA; color: #721C24; }
+        #result {
+            white-space: pre-wrap;
+            padding: 1rem;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-height: 100px;
+            margin-top: 1rem;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1rem;
+            margin-top: 1rem;
+        }
+        button:hover { background: #45a049; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+<h1>🎤 Whisper Web</h1>
+<p>Загрузите аудио или видео — получите текстовую транскрипцию.</p>
+
+<div class="upload-area" id="dropzone">
+    <p>📁 Перетащите файл сюда или кликните</p>
+    <p><small>(поддерживаются аудио и видео)</small></p>
+    <input type="file" id="fileInput" accept="audio/*,video/*" class="hidden">
+</div>
+
+<button id="transcribeBtn" disabled>Распознать</button>
+<div id="status" class="hidden"></div>
+<div id="result"></div>
+
+<script type="module">
+    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+
+    let transcriber = null;
+    let selectedFile = null;
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const transcribeBtn = document.getElementById('transcribeBtn');
+    const statusEl = document.getElementById('status');
+    const resultEl = document.getElementById('result');
+
+    function showStatus(msg, type = 'loading') {
+        statusEl.textContent = msg;
+        statusEl.className = type;
+        statusEl.classList.remove('hidden');
+    }
+
+    function hideStatus() {
+        statusEl.classList.add('hidden');
+    }
+
+    async function initModel() {
+        if (transcriber) return transcriber;
+
+        showStatus('⏳ Загружаю модель whisper-tiny (75 МБ)...');
+        try {
+            // Загружаем модель ТОЛЬКО из CDN, без попыток локальной загрузки
+            transcriber = await pipeline(
+                'automatic-speech-recognition',
+                'Xenova/whisper-tiny',
+                {
+                    cache_dir: undefined, // отключаем локальный кэш
+                    progress_callback: (data) => {
+                        if (data.status === 'downloading') {
+                            const pct = ((data.loaded / data.total) * 100).toFixed(1);
+                            showStatus(`⏳ Загрузка модели: ${pct}%`);
+                        }
+                    }
+                }
+            );
+            showStatus('✅ Модель загружена!', 'success');
+            setTimeout(hideStatus, 1000);
+            return transcriber;
+        } catch (err) {
+            console.error('Ошибка загрузки модели:', err);
+            showStatus(`❌ Ошибка: ${err.message || 'Не удалось загрузить модель'}`, 'error');
+            throw err;
+        }
+    }
+
+    async function transcribeAudio(audioBuffer) {
+        // Ресемплирование в 16 кГц моно
+        const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+        const source = offlineCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(offlineCtx.destination);
+        source.start();
+        const renderedBuffer = await offlineCtx.startRendering();
+        const audioData = renderedBuffer.getChannelData(0);
+
+        showStatus('🎤 Распознаю речь...');
+
+        const result = await transcriber(audioData, {
+            chunk_length_s: 30,
+            stride_length_s: 5,
+            language: 'ru',
+            task: 'transcribe'
+        });
+
+        return result.text;
+    }
+
+    async function transcribe() {
+        if (!selectedFile) return;
+
+        try {
+            showStatus('🎵 Декодирую аудио...');
+            transcribeBtn.disabled = true;
+
+            const audioContext = new AudioContext();
+            const arrayBuffer = await selectedFile.arrayBuffer();
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            const model = await initModel();
+            const text = await transcribeAudio(audioBuffer);
+
+            resultEl.textContent = text;
+            showStatus('✅ Готово!', 'success');
+            setTimeout(hideStatus, 2000);
+
+        } catch (err) {
+            console.error('Ошибка транскрипции:', err);
+            showStatus(`❌ ${err.message || 'Неизвестная ошибка'}`, 'error');
+        } finally {
+            transcribeBtn.disabled = false;
+        }
+    }
+
+    function handleFileSelect(file) {
+        selectedFile = file;
+        transcribeBtn.disabled = false;
+        resultEl.textContent = '';
+        showStatus(`Выбран файл: ${file.name}`, 'success');
+        setTimeout(hideStatus, 1500);
+    }
+
+    // UI события
+    dropzone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', (e) => e.target.files.length && handleFileSelect(e.target.files[0]));
+    transcribeBtn.addEventListener('click', transcribe);
+
+    ['dragover', 'dragenter'].forEach(evt => {
+        dropzone.addEventListener(evt, (e) => {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+    });
+
+    ['dragleave', 'drop'].forEach(evt => {
+        dropzone.addEventListener(evt, () => dropzone.classList.remove('dragover'));
+    });
+
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) handleFileSelect(e.dataTransfer.files[0]);
+    });
+</script>
+</body>
+</html>
