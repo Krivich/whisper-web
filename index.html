@@ -3,22 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Whisper Web</title>
+    <title>Whisper Web — YouTube в текст</title>
     <style>
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            max-width: 800px; margin: 2rem auto; padding: 0 1rem;
-            line-height: 1.6;
-            background: #f8f9fa;
+            max-width: 900px; margin: 2rem auto; padding: 0 1rem;
+            line-height: 1.6; background: #f8f9fa;
         }
         h1 { color: #333; margin-bottom: 0.5rem; }
-        .subtitle { color: #666; margin-top: 0; margin-bottom: 2rem; }
+        .subtitle { color: #666; margin-bottom: 2rem; }
 
         .upload-area {
             border: 3px dashed #4CAF50;
             border-radius: 8px;
-            padding: 2rem;
+            padding: 2.5rem;
             text-align: center;
             margin: 1rem 0;
             cursor: pointer;
@@ -34,8 +33,8 @@
         .disclaimer {
             font-size: 0.9rem;
             color: #666;
-            margin-top: 1rem;
-            padding: 0.5rem;
+            margin: 1rem 0;
+            padding: 0.75rem;
             background: #fff3cd;
             border-radius: 4px;
             border-left: 4px solid #ffc107;
@@ -49,11 +48,17 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 1rem;
-            margin-top: 1rem;
             font-weight: 600;
+            margin: 0.5rem 0;
         }
         button:hover { background: #45a049; }
         button:disabled { background: #ccc; cursor: not-allowed; }
+        button.secondary {
+            background: #6c757d;
+        }
+        button.secondary:hover {
+            background: #5a6268;
+        }
 
         /* Progress steps */
         .progress-container {
@@ -62,22 +67,26 @@
             padding: 1.5rem;
             margin: 1.5rem 0;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: none;
         }
         .progress-title {
             font-weight: 600;
             margin-bottom: 1rem;
             color: #333;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         .step {
             display: flex;
-            align-items: center;
-            padding: 0.75rem 0;
+            align-items: flex-start;
+            padding: 1rem 0;
             border-bottom: 1px solid #eee;
         }
         .step:last-child { border-bottom: none; }
         .step-icon {
-            width: 24px;
-            height: 24px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             background: #e9ecef;
             display: flex;
@@ -85,11 +94,15 @@
             justify-content: center;
             margin-right: 1rem;
             flex-shrink: 0;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             font-weight: bold;
         }
         .step-icon.pending { background: #e9ecef; color: #6c757d; }
-        .step-icon.active { background: #ffc107; color: #212529; animation: pulse 1.5s infinite; }
+        .step-icon.active {
+            background: #ffc107;
+            color: #212529;
+            animation: pulse 1.5s infinite;
+        }
         .step-icon.completed { background: #28a745; color: white; }
         .step-content {
             flex: 1;
@@ -97,10 +110,17 @@
         .step-title {
             font-weight: 500;
             margin-bottom: 0.25rem;
+            color: #333;
         }
         .step-desc {
             font-size: 0.85rem;
             color: #6c757d;
+        }
+        .step-details {
+            font-size: 0.8rem;
+            color: #495057;
+            margin-top: 0.25rem;
+            padding-left: 1.5rem;
         }
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
@@ -142,6 +162,7 @@
             padding: 1.5rem;
             margin-top: 1.5rem;
             box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            display: none;
         }
         .result-header {
             display: flex;
@@ -157,10 +178,9 @@
         }
         .metrics {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 1rem;
-            margin-top: 1rem;
-            font-size: 0.9rem;
+            margin: 1rem 0;
         }
         .metric-card {
             background: #f8f9fa;
@@ -192,14 +212,41 @@
             margin-top: 1rem;
         }
 
-        /* Loading spinner */
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .file-info {
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
         .spinner {
             border: 3px solid #f3f3f3;
             border-top: 3px solid #4CAF50;
             border-radius: 50%;
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             animation: spin 1s linear infinite;
+            display: inline-block;
             margin-right: 0.5rem;
         }
         @keyframes spin {
@@ -207,11 +254,20 @@
             100% { transform: rotate(360deg); }
         }
 
-        .step-details {
-            font-size: 0.8rem;
-            color: #495057;
-            margin-top: 0.25rem;
-            padding-left: 1.5rem;
+        .url-input {
+            display: flex;
+            gap: 0.5rem;
+            margin: 1rem 0;
+        }
+        .url-input input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+        }
+        .url-input button {
+            padding: 0.75rem 1.5rem;
         }
     </style>
 </head>
@@ -219,27 +275,49 @@
 <h1>🎤 Whisper Web</h1>
 <p class="subtitle">Загрузите аудио или видео — получите текстовую транскрипцию</p>
 
+<div class="disclaimer">
+    ⚠️ <strong>Важно:</strong><br>
+    • Максимальный размер файла: 50 МБ (рекомендуется)<br>
+    • Для обработки видео используйте <code>yt-dlp</code> или онлайн-конвертеры
+</div>
+
 <div class="upload-area" id="dropzone">
     <p>📁 Перетащите файл сюда или кликните</p>
     <p><small>(поддерживаются аудио и видео)</small></p>
     <input type="file" id="fileInput" accept="audio/*,video/*" class="hidden">
 </div>
 
-<div class="disclaimer">
-    ⚠️ <strong>Рекомендации:</strong><br>
-    • Файлы до 50 МБ обрабатываются быстро<br>
-    • Большие файлы (>100 МБ) могут зависнуть или не обработаться
+<div class="url-input">
+    <input type="url" id="youtubeUrl" placeholder="Или вставьте ссылку на аудио файл (не на YouTube)">
+    <button onclick="handleUrl()">Загрузить</button>
 </div>
 
-<button id="transcribeBtn" disabled>▶️ Начать распознавание</button>
+<div class="file-info" id="fileInfo"></div>
+
+<div class="action-buttons">
+    <button id="transcribeBtn" disabled>▶️ Начать распознавание</button>
+    <button id="cancelBtn" class="secondary" disabled onclick="cancelProcessing()">⏹️ Отменить</button>
+</div>
 
 <div id="status" class="hidden"></div>
 
-<div class="progress-container" id="progressContainer" style="display: none;">
-    <div class="progress-title">📋 Ход выполнения</div>
+<div class="progress-container" id="progressContainer">
+    <div class="progress-title">
+        <span class="spinner"></span>
+        📋 Ход выполнения
+    </div>
+
+    <div class="step" id="step-init">
+        <div class="step-icon pending" id="icon-init">1</div>
+        <div class="step-content">
+            <div class="step-title">Инициализация</div>
+            <div class="step-desc">Подготовка воркера</div>
+            <div class="step-details" id="detail-init" style="display: none;"></div>
+        </div>
+    </div>
 
     <div class="step" id="step-model">
-        <div class="step-icon pending" id="icon-model">1</div>
+        <div class="step-icon pending" id="icon-model">2</div>
         <div class="step-content">
             <div class="step-title">Загрузка модели Whisper</div>
             <div class="step-desc">Модель распознавания речи (~75 МБ)</div>
@@ -248,20 +326,11 @@
     </div>
 
     <div class="step" id="step-decode">
-        <div class="step-icon pending" id="icon-decode">2</div>
+        <div class="step-icon pending" id="icon-decode">3</div>
         <div class="step-content">
             <div class="step-title">Декодирование аудио</div>
             <div class="step-desc">Извлечение аудиодорожки из файла</div>
             <div class="step-details" id="detail-decode" style="display: none;"></div>
-        </div>
-    </div>
-
-    <div class="step" id="step-resample">
-        <div class="step-icon pending" id="icon-resample">3</div>
-        <div class="step-content">
-            <div class="step-title">Ресемплирование</div>
-            <div class="step-desc">Приведение к формату 16 кГц моно</div>
-            <div class="step-details" id="detail-resample" style="display: none;"></div>
         </div>
     </div>
 
@@ -284,10 +353,13 @@
     </div>
 </div>
 
-<div class="result-container" id="resultContainer" style="display: none;">
+<div class="result-container" id="resultContainer">
     <div class="result-header">
         <div class="result-title">📝 Результат транскрипции</div>
-        <button id="copyBtn" onclick="copyResult()">📋 Копировать</button>
+        <div class="action-buttons">
+            <button onclick="copyResult()">📋 Копировать</button>
+            <button onclick="downloadResult()">💾 Скачать</button>
+        </div>
     </div>
 
     <div class="metrics">
@@ -312,26 +384,29 @@
     <div class="result-text" id="resultText"></div>
 </div>
 
-<script type="module">
-    import { pipeline } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
-
-    let transcriber = null;
+<script>
+    let worker = null;
     let selectedFile = null;
+    let selectedUrl = null;
+    let processing = false;
     let startTime = null;
 
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
+    const youtubeUrlInput = document.getElementById('youtubeUrl');
     const transcribeBtn = document.getElementById('transcribeBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
     const statusEl = document.getElementById('status');
     const progressContainer = document.getElementById('progressContainer');
     const resultContainer = document.getElementById('resultContainer');
     const resultText = document.getElementById('resultText');
+    const fileInfoEl = document.getElementById('fileInfo');
 
     // Шаги прогресса
     const steps = {
+        init: { icon: 'icon-init', detail: 'detail-init' },
         model: { icon: 'icon-model', detail: 'detail-model' },
         decode: { icon: 'icon-decode', detail: 'detail-decode' },
-        resample: { icon: 'icon-resample', detail: 'detail-resample' },
         transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
     };
@@ -361,71 +436,100 @@
         statusEl.classList.add('hidden');
     }
 
-    // Инициализация модели
-    async function initModel() {
-        setStep('model', 'active', 'Загрузка из CDN...');
+    // Создание воркера
+    function createWorker() {
+        if (worker) {
+            worker.terminate();
+        }
+        worker = new Worker('worker.js');
 
-        try {
-            transcriber = await pipeline(
-                'automatic-speech-recognition',
-                'Xenova/whisper-tiny',
-                {
-                    cache_dir: undefined,
-                    progress_callback: (data) => {
-                        if (data.status === 'downloading') {
-                            const pct = ((data.loaded / data.total) * 100).toFixed(1);
-                            const size = (data.total / 1024 / 1024).toFixed(1);
-                            setStep('model', 'active', `Загружено: ${pct}% из ${size} МБ`);
-                        }
-                    }
-                }
-            );
-            setStep('model', 'completed', 'Модель загружена и закэширована');
-            return transcriber;
-        } catch (err) {
-            setStep('model', 'pending');
-            console.error('Ошибка загрузки модели:', err);
-            throw err;
+        worker.onmessage = (event) => {
+            const { type, data } = event.data;
+
+            switch (type) {
+                case 'progress':
+                    handleProgress(data);
+                    break;
+                case 'result':
+                    handleResult(data);
+                    break;
+                case 'error':
+                    handleError(data);
+                    break;
+                case 'log':
+                    console.log('[Worker]', data);
+                    break;
+            }
+        };
+
+        worker.onerror = (error) => {
+            console.error('Worker error:', error);
+            showStatus(`❌ Ошибка воркера: ${error.message}`, 'error');
+            resetProcessing();
+        };
+    }
+
+    // Обработка прогресса от воркера
+    function handleProgress(data) {
+        const { step, status, message, progress } = data;
+
+        if (step) {
+            setStep(step, status, message);
+        }
+
+        if (progress !== undefined) {
+            // Можно добавить прогресс-бар
         }
     }
 
-    // Обработка аудио
-    async function transcribeAudio(audioBuffer) {
-        // Шаг 2: Декодирование
-        setStep('decode', 'completed', `Успешно: ${audioBuffer.numberOfChannels} канала(ов), ${audioBuffer.sampleRate} Гц`);
+    // Обработка результата
+    function handleResult(data) {
+        const { text, audioBuffer, file } = data;
 
-        // Шаг 3: Ресемплирование
-        setStep('resample', 'active', 'Преобразование в 16 кГц моно...');
+        // Показать результат
+        resultText.textContent = text;
+        resultContainer.style.display = 'block';
 
-        const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
-        const source = offlineCtx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(offlineCtx.destination);
-        source.start();
-        const renderedBuffer = await offlineCtx.startRendering();
+        // Обновить метрики
+        updateMetrics(file, audioBuffer, text);
 
-        setStep('resample', 'completed', `Ресемплировано: 1 канал, 16000 Гц, ${renderedBuffer.duration.toFixed(1)} сек`);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        showStatus(`✅ Готово! Обработка заняла ${elapsed} сек`, 'success');
 
-        // Шаг 4: Распознавание
-        setStep('transcribe', 'active', 'Анализ речи...');
+        setStep('complete', 'completed', `Завершено за ${elapsed} сек`);
 
-        const audioData = renderedBuffer.getChannelData(0);
-        const result = await transcriber(audioData, {
-            chunk_length_s: 30,
-            stride_length_s: 5,
-            language: 'ru',
-            task: 'transcribe'
-        });
+        resetProcessing();
+    }
 
-        setStep('transcribe', 'completed', 'Текст распознан');
-        return result.text;
+    // Обработка ошибки
+    function handleError(error) {
+        console.error('Worker error:', error);
+        showStatus(`❌ Ошибка: ${error}`, 'error');
+        setStep('complete', 'pending');
+        resetProcessing();
+    }
+
+    // Сброс состояния обработки
+    function resetProcessing() {
+        processing = false;
+        transcribeBtn.disabled = !selectedFile && !selectedUrl;
+        cancelBtn.disabled = true;
+    }
+
+    // Отмена обработки
+    function cancelProcessing() {
+        if (worker) {
+            worker.postMessage({ type: 'cancel' });
+        }
+        showStatus('⏹️ Обработка отменена', 'warning');
+        resetProcessing();
     }
 
     // Копирование результата
     function copyResult() {
         const text = resultText.textContent;
         navigator.clipboard.writeText(text).then(() => {
-            const btn = document.getElementById('copyBtn');
+            const btn = event.target;
             const original = btn.textContent;
             btn.textContent = '✅ Скопировано!';
             setTimeout(() => {
@@ -434,65 +538,19 @@
         });
     }
 
-    // Основная функция
-    async function transcribe() {
-        if (!selectedFile) return;
-
-        // Проверка размера
-        const maxSize = 100 * 1024 * 1024; // 100 МБ
-        if (selectedFile.size > maxSize) {
-            if (!confirm(`Файл ${selectedFile.name} весит ${(selectedFile.size / 1024 / 1024).toFixed(1)} МБ.\nЭто может занять много времени или зависнуть.\nПродолжить?`)) {
-                return;
-            }
-        }
-
-        startTime = Date.now();
-
-        // Сброс прогресса
-        Object.keys(steps).forEach(step => {
-            setStep(step, step === 'model' ? 'active' : 'pending', '');
-        });
-
-        // Показать прогресс
-        progressContainer.style.display = 'block';
-        resultContainer.style.display = 'none';
-
-        try {
-            showStatus('🚀 Начинаю обработку...', 'loading');
-            transcribeBtn.disabled = true;
-
-            // Шаг 1: Загрузка модели
-            const model = await initModel();
-
-            // Шаг 2-4: Обработка аудио
-            const audioContext = new AudioContext();
-            const arrayBuffer = await selectedFile.arrayBuffer();
-            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-
-            const text = await transcribeAudio(audioBuffer);
-
-            // Шаг 5: Завершение
-            setStep('complete', 'completed', 'Все шаги выполнены успешно');
-
-            // Показать результат
-            resultText.textContent = text;
-            resultContainer.style.display = 'block';
-
-            // Обновить метрики
-            updateMetrics(selectedFile, audioBuffer, text);
-
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            showStatus(`✅ Готово! Обработка заняла ${elapsed} сек`, 'success');
-
-        } catch (err) {
-            console.error('Ошибка транскрипции:', err);
-            setStep('complete', 'pending');
-            showStatus(`❌ Ошибка: ${err.message || 'Неизвестная ошибка'}`, 'error');
-        } finally {
-            transcribeBtn.disabled = false;
-        }
+    // Скачивание результата
+    function downloadResult() {
+        const text = resultText.textContent;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transcript_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        a.click();
+        URL.revokeObjectURL(url);
     }
 
+    // Обновление метрик
     function updateMetrics(file, audioBuffer, text) {
         // Размер файла
         const size = (file.size / 1024 / 1024).toFixed(1);
@@ -505,16 +563,33 @@
         document.getElementById('metric-duration').textContent = `${mins}:${secs.toString().padStart(2, '0')}`;
 
         // Символы
-        document.getElementById('metric-chars').textContent = text.length;
+        document.getElementById('metric-chars').textContent = text.length.toLocaleString('ru');
 
         // Слова
         const words = text.trim().split(/\s+/).filter(w => w).length;
-        document.getElementById('metric-words').textContent = words;
+        document.getElementById('metric-words').textContent = words.toLocaleString('ru');
     }
 
+    // Обработка файла
     function handleFileSelect(file) {
+        // Проверка размера
+        const maxSize = 50 * 1024 * 1024; // 50 МБ
+        if (file.size > maxSize) {
+            showStatus(`⚠️ Файл слишком большой (${(file.size / 1024 / 1024).toFixed(1)} МБ). Максимум 50 МБ.`, 'warning');
+            selectedFile = null;
+            selectedUrl = null;
+            transcribeBtn.disabled = true;
+            fileInfoEl.textContent = '';
+            return;
+        }
+
         selectedFile = file;
+        selectedUrl = null;
         transcribeBtn.disabled = false;
+
+        // Показать информацию о файле
+        const size = (file.size / 1024 / 1024).toFixed(1);
+        fileInfoEl.textContent = `Выбран файл: ${file.name} (${size} МБ)`;
 
         // Сброс прогресса
         Object.keys(steps).forEach(step => {
@@ -523,10 +598,73 @@
         progressContainer.style.display = 'none';
         resultContainer.style.display = 'none';
 
-        // Показать информацию о файле
-        const size = (file.size / 1024 / 1024).toFixed(1);
-        showStatus(`✅ Выбран файл: ${file.name} (${size} МБ)`, 'success');
+        showStatus(`✅ Выбран файл: ${file.name}`, 'success');
         setTimeout(hideStatus, 2000);
+    }
+
+    // Обработка URL
+    function handleUrl() {
+        const url = youtubeUrlInput.value.trim();
+        if (!url) {
+            showStatus('⚠️ Введите ссылку на аудио файл', 'warning');
+            return;
+        }
+
+        // Проверка что это не YouTube (нужен бэкенд)
+        if (url.includes('youtube.com') || url.includes('youtu.be')) {
+            showStatus('⚠️ Прямые ссылки на YouTube не поддерживаются. Скачайте аудио через yt-dlp.', 'warning');
+            return;
+        }
+
+        selectedUrl = url;
+        selectedFile = null;
+        transcribeBtn.disabled = false;
+
+        fileInfoEl.textContent = `URL: ${url}`;
+        showStatus(`✅ URL готов к обработке`, 'success');
+        setTimeout(hideStatus, 2000);
+    }
+
+    // Основная функция транскрипции
+    async function transcribe() {
+        if (processing) return;
+
+        processing = true;
+        startTime = Date.now();
+        transcribeBtn.disabled = true;
+        cancelBtn.disabled = false;
+
+        // Показать прогресс
+        progressContainer.style.display = 'block';
+        resultContainer.style.display = 'none';
+
+        // Создать воркер
+        createWorker();
+
+        // Отправить задачу воркеру
+        setStep('init', 'active', 'Создание воркера...');
+
+        if (selectedFile) {
+            // Чтение файла
+            const arrayBuffer = await selectedFile.arrayBuffer();
+
+            worker.postMessage({
+                type: 'transcribe',
+                file: {
+                    name: selectedFile.name,
+                    size: selectedFile.size,
+                    arrayBuffer: arrayBuffer
+                }
+            }, [arrayBuffer]); // Transfer ownership для экономии памяти
+
+        } else if (selectedUrl) {
+            worker.postMessage({
+                type: 'transcribeUrl',
+                url: selectedUrl
+            });
+        }
+
+        setStep('init', 'completed', 'Воркер готов');
     }
 
     // UI события
@@ -553,9 +691,15 @@
 
     dropzone.addEventListener('drop', (e) => {
         e.preventDefault();
-        dropzone.classList.remove('dragover');
         if (e.dataTransfer.files.length) {
             handleFileSelect(e.dataTransfer.files[0]);
+        }
+    });
+
+    // Очистка при закрытии
+    window.addEventListener('beforeunload', () => {
+        if (worker) {
+            worker.terminate();
         }
     });
 </script>
