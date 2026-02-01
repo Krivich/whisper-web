@@ -41,6 +41,62 @@
             border-left: 4px solid #2196F3;
         }
 
+        .model-selector {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .model-selector label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+        .model-options {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+        .model-option {
+            padding: 1rem;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        .model-option:hover {
+            border-color: #4CAF50;
+            background: #f0f8f0;
+        }
+        .model-option.selected {
+            border-color: #4CAF50;
+            background: #e8f5e9;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+        .model-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.25rem;
+        }
+        .model-desc {
+            font-size: 0.85rem;
+            color: #666;
+        }
+        .model-size {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 0.25rem;
+        }
+        .model-warning {
+            font-size: 0.8rem;
+            color: #dc3545;
+            margin-top: 0.25rem;
+            font-weight: 500;
+        }
+
         button {
             background: #4CAF50;
             color: white;
@@ -311,11 +367,58 @@
             text-decoration: underline;
         }
         .toggle-debug:hover { color: #007bff; }
+
+        /* Heartbeat indicator */
+        .heartbeat {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #4CAF50;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            animation: heartbeat 2s infinite;
+        }
+        @keyframes heartbeat {
+            0%, 100% { opacity: 0.3; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+        .heartbeat-container {
+            display: flex;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #666;
+        }
     </style>
 </head>
 <body>
 <h1>🎤 Whisper Web</h1>
 <p class="subtitle">Загрузите аудио или видео — получите текстовую транскрипцию</p>
+
+<div class="model-selector">
+    <label>Выберите модель Whisper:</label>
+    <div class="model-options">
+        <div class="model-option selected" data-model="tiny">
+            <div class="model-name">Tiny</div>
+            <div class="model-desc">⚡ Супер быстро</div>
+            <div class="model-size">~75 МБ</div>
+        </div>
+        <div class="model-option" data-model="base">
+            <div class="model-name">Base</div>
+            <div class="model-desc">⚡ Быстро</div>
+            <div class="model-size">~145 МБ</div>
+        </div>
+        <div class="model-option" data-model="small">
+            <div class="model-name">Small</div>
+            <div class="model-desc">⚖️ Баланс</div>
+            <div class="model-size">~480 МБ</div>
+            <div class="model-warning">Требует 2+ ГБ RAM</div>
+        </div>
+    </div>
+    <div style="margin-top: 0.5rem; font-size: 0.85rem; color: #666;">
+        ⚠️ Tiny — быстро, но качество ниже. Small — медленнее, но качество значительно лучше.
+    </div>
+</div>
 
 <div class="upload-area" id="dropzone">
     <p>📁 Перетащите файл сюда или кликните</p>
@@ -325,7 +428,7 @@
 
 <div class="disclaimer">
     💡 <strong>Оптимизация:</strong> Ресемплирование выполняется внутри модели Whisper — дополнительная обработка не требуется.<br>
-    ⚠️ Файлы до 50 МБ: ~1-2 мин • 50-100 МБ: ~2-4 мин • >100 МБ: 5+ мин (зависит от CPU)
+    ⚠️ Файлы до 50 МБ: ~1-2 мин • 50-100 МБ: ~2-4 мин • >100 МБ: 5+ мин (зависит от модели и CPU)
 </div>
 
 <button id="transcribeBtn" disabled>▶️ Начать распознавание</button>
@@ -342,7 +445,7 @@
         <div class="step-icon pending" id="icon-model">1</div>
         <div class="step-content">
             <div class="step-title">Загрузка модели Whisper</div>
-            <div class="step-desc">Модель распознавания речи (~75 МБ)</div>
+            <div class="step-desc">Модель распознавания речи</div>
             <div class="step-details" id="detail-model" style="display: none;"></div>
             <div class="progress-bar-container" id="progress-model" style="display: none;">
                 <div class="progress-bar" id="progress-bar-model"></div>
@@ -388,6 +491,10 @@
                 <span class="spinner-mini"></span>
                 <span id="timer-text-transcribe">⏱️ Прошло: 00:00</span>
             </div>
+            <div class="heartbeat-container">
+                <div class="heartbeat"></div>
+                <span id="heartbeat-text">Обработка активна...</span>
+            </div>
         </div>
     </div>
 
@@ -409,7 +516,7 @@
 <div class="result-container" id="resultContainer" style="display: none;">
     <div class="result-header">
         <div class="result-title">📝 Результат транскрипции</div>
-        <button id="copyBtn" onclick="copyResult()">📋 Копировать</button>
+        <button id="copyBtn">📋 Копировать</button>
     </div>
 
     <div class="metrics">
@@ -447,16 +554,20 @@
     let timerInterval = null;
     let logStartTime = Date.now();
     let memoryCheckInterval = null;
+    let heartbeatInterval = null;
+    let selectedModel = 'tiny'; // tiny, base, small
 
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
     const transcribeBtn = document.getElementById('transcribeBtn');
+    const copyBtn = document.getElementById('copyBtn'); // <-- Кнопка через DOM
     const statusEl = document.getElementById('status');
     const progressContainer = document.getElementById('progressContainer');
     const resultContainer = document.getElementById('resultContainer');
     const resultText = document.getElementById('resultText');
     const debugLog = document.getElementById('debugLog');
     const memoryStats = document.getElementById('memory-stats');
+    const heartbeatText = document.getElementById('heartbeat-text');
 
     // Шаги прогресса
     const steps = {
@@ -466,6 +577,45 @@
         transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe', timer: 'timer-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
     };
+
+    // Модели и их параметры
+    const models = {
+        tiny: {
+            name: 'Xenova/whisper-tiny',
+            size: '75 МБ',
+            quality: 'Низкое',
+            speed: 'Очень быстро',
+            ram: '500 МБ',
+            description: 'Для быстрой обработки, качество ниже'
+        },
+        base: {
+            name: 'Xenova/whisper-base',
+            size: '145 МБ',
+            quality: 'Среднее',
+            speed: 'Быстро',
+            ram: '1 ГБ',
+            description: 'Хороший баланс скорости и качества'
+        },
+        small: {
+            name: 'Xenova/whisper-small',
+            size: '480 МБ',
+            quality: 'Высокое',
+            speed: 'Медленно',
+            ram: '2+ ГБ',
+            description: 'Лучшее качество, но требует много памяти'
+        }
+    };
+
+    // ========== УТИЛИТЫ ==========
+    // Асинхронная пауза для обновления UI
+    function asyncYield() {
+        return new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    // Асинхронная пауза с таймаутом
+    function asyncSleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
 
     // ========== ЛОГИРОВАНИЕ ==========
     function log(message, type = 'info') {
@@ -488,12 +638,14 @@
             console.log(consoleMsg);
         }
 
-        // UI лог
-        const entry = document.createElement('div');
-        entry.className = `log-entry ${type}`;
-        entry.innerHTML = `<span class="log-time">${timestamp}</span>${message}`;
-        debugLog.appendChild(entry);
-        debugLog.scrollTop = debugLog.scrollHeight;
+        // UI лог - асинхронно обновляем
+        setTimeout(() => {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="log-time">${timestamp}</span>${message}`;
+            debugLog.appendChild(entry);
+            debugLog.scrollTop = debugLog.scrollHeight;
+        }, 0);
     }
 
     function logMemory() {
@@ -581,6 +733,23 @@
         document.getElementById('timer-transcribe').style.display = 'none';
     }
 
+    // Пульсация для индикации активности
+    function startHeartbeat(message = 'Обработка активна...') {
+        let dots = 0;
+        heartbeatInterval = setInterval(() => {
+            dots = (dots + 1) % 4;
+            heartbeatText.textContent = `${message}${'.'.repeat(dots)}`;
+        }, 500);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+            heartbeatText.textContent = 'Обработка активна...';
+        }
+    }
+
     function showStatus(msg, type = 'loading') {
         statusEl.textContent = msg;
         statusEl.className = type === 'loading' ? 'status-loading' :
@@ -595,17 +764,18 @@
 
     // Инициализация модели
     async function initModel() {
-        log('🚀 Начало загрузки модели Whisper', 'info');
-        logMemory();
+        const modelConfig = models[selectedModel];
+        log(`🚀 Начало загрузки модели ${selectedModel.toUpperCase()} (${modelConfig.name})`, 'info');
+        await asyncYield();
 
-        setStep('model', 'active', 'Загрузка из CDN...', 0);
+        setStep('model', 'active', `Загрузка модели ${selectedModel}...`, 0);
 
         try {
             const modelStart = Date.now();
 
             transcriber = await pipeline(
                 'automatic-speech-recognition',
-                'Xenova/whisper-tiny',
+                modelConfig.name,
                 {
                     cache_dir: undefined,
                     progress_callback: (data) => {
@@ -627,9 +797,10 @@
             const modelEnd = Date.now();
             const modelTime = ((modelEnd - modelStart) / 1000).toFixed(1);
             logMemory();
-            log(`✅ Модель загружена за ${modelTime} сек`, 'success');
+            log(`✅ Модель ${selectedModel} загружена за ${modelTime} сек`, 'success');
+            await asyncYield();
 
-            setStep('model', 'completed', 'Модель загружена и закэширована', 100);
+            setStep('model', 'completed', `Модель ${selectedModel} загружена`, 100);
             return transcriber;
         } catch (err) {
             setStep('model', 'error');
@@ -648,24 +819,32 @@
 
         logMemory();
         log(`✅ Декодирование завершено: ${channels} канал(а), ${sampleRate} Гц, ${duration.toFixed(1)} сек`, 'success');
+        await asyncYield();
 
         setStep('decode', 'completed', `Успешно: ${channels} канала(ов), ${sampleRate} Гц, ${duration.toFixed(1)} сек`);
-        stopDecodeTimer(); // <-- ВАЖНО: скрываем таймер декодирования
+        stopDecodeTimer();
 
         // Шаг 3: Ресемплирование — ПРОПУЩЕН (выполняется внутри модели)
         log('⊘ Ресемплирование пропущено (выполняется внутри Whisper)', 'info');
+        await asyncYield();
+
         setStep('resample', 'skipped');
 
         // Шаг 4: Распознавание — передаем сырые данные
-        log('🎤 Начало распознавания речи...', 'info');
+        log(`🎤 Начало распознавания речи (модель: ${selectedModel})...`, 'info');
+        await asyncYield();
+
         setStep('transcribe', 'active', 'Анализ речи...', 0);
         startTimer('timer-transcribe', 'timer-text-transcribe');
+        startHeartbeat('Распознавание речи');
 
         try {
             // Берем первый канал (или смешиваем если стерео)
             let audioData;
             if (audioBuffer.numberOfChannels > 1) {
                 log(`🔄 Смешивание ${audioBuffer.numberOfChannels} каналов в моно...`, 'info');
+                await asyncYield();
+
                 const left = audioBuffer.getChannelData(0);
                 const right = audioBuffer.getChannelData(1);
                 audioData = new Float32Array(left.length);
@@ -673,14 +852,17 @@
                     audioData[i] = (left[i] + right[i]) / 2;
                 }
                 log(`✅ Смешивание завершено: ${audioData.length} сэмплов`, 'success');
+                await asyncYield();
             } else {
                 audioData = audioBuffer.getChannelData(0);
                 log(`✅ Моно аудио: ${audioData.length} сэмплов`, 'success');
+                await asyncYield();
             }
 
             // Адаптивные параметры для больших файлов
             const chunkLength = duration > 180 ? 15 : (duration > 60 ? 20 : 30);
             log(`⚙️ Параметры: чанк=${chunkLength}с, шаг=${(chunkLength/6).toFixed(1)}с`, 'info');
+            await asyncYield();
 
             const transcribeStart = Date.now();
 
@@ -709,30 +891,32 @@
             const transcribeEnd = Date.now();
             const transcribeTime = ((transcribeEnd - transcribeStart) / 1000).toFixed(1);
 
-            stopTranscribeTimer(); // <-- ВАЖНО: скрываем таймер распознавания
+            stopTranscribeTimer();
+            stopHeartbeat();
             setStep('transcribe', 'completed', `Распознано ${result.text.length} символов`, 100);
 
             logMemory();
             log(`✅ Распознавание завершено за ${transcribeTime} сек (${result.text.length} символов)`, 'success');
+            await asyncYield();
 
             return result.text;
         } catch (err) {
             stopTranscribeTimer();
+            stopHeartbeat();
             setStep('transcribe', 'error');
             log(`❌ Ошибка распознавания: ${err.message}`, 'error');
             throw err;
         }
     }
 
-    // Копирование результата
+    // Копирование результата - ИСПРАВЛЕНО
     function copyResult() {
         const text = resultText.textContent;
         navigator.clipboard.writeText(text).then(() => {
-            const btn = document.getElementById('copyBtn');
-            const original = btn.textContent;
-            btn.textContent = '✅ Скопировано!';
+            const original = copyBtn.textContent;
+            copyBtn.textContent = '✅ Скопировано!';
             setTimeout(() => {
-                btn.textContent = original;
+                copyBtn.textContent = original;
             }, 2000);
         }).catch(err => {
             console.error('Ошибка копирования:', err);
@@ -747,22 +931,27 @@
         // Сброс времени логирования
         logStartTime = Date.now();
         log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
-        log('🎬 ЗАПУСК НОВОЙ ТРАНСКРИПЦИИ', 'info');
+        log(`🎬 ЗАПУСК НОВОЙ ТРАНСКРИПЦИИ (модель: ${selectedModel})`, 'info');
         log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+        await asyncYield();
 
         // Проверка размера
         const maxSize = 250 * 1024 * 1024; // 250 МБ
         const fileSizeMB = (selectedFile.size / 1024 / 1024).toFixed(1);
 
         log(`📁 Выбран файл: ${selectedFile.name} (${fileSizeMB} МБ)`, 'info');
+        await asyncYield();
 
         if (selectedFile.size > maxSize) {
             log(`⚠️ Файл превышает ${maxSize/1024/1024} МБ`, 'warn');
+            await asyncYield();
+
             if (!confirm(`⚠️ Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nОбработка может занять 10+ минут и потребовать много памяти.\nПродолжить?`)) {
                 log('❌ Пользователь отменил обработку большого файла', 'warn');
                 return;
             }
             log('✅ Пользователь подтвердил обработку большого файла', 'success');
+            await asyncYield();
         }
 
         startTime = Date.now();
@@ -794,17 +983,25 @@
             showStatus('🚀 Начинаю обработку...', 'loading');
             transcribeBtn.disabled = true;
 
-            // Шаг 1: Загрузка модели (если еще не загружена)
-            if (!transcriber) {
-                log('📥 Модель не загружена, начинаю загрузку...', 'info');
+            // Шаг 1: Загрузка модели (если еще не загружена ИЛИ выбрана другая)
+            const modelConfig = models[selectedModel];
+            if (!transcriber || window.currentModel !== selectedModel) {
+                log(`📥 Модель ${selectedModel} не загружена, начинаю загрузку...`, 'info');
+                await asyncYield();
+
                 await initModel();
+                window.currentModel = selectedModel;
             } else {
-                log('✅ Модель уже загружена (кэш)', 'success');
-                setStep('model', 'completed', 'Модель уже загружена', 100);
+                log(`✅ Модель ${selectedModel} уже загружена (кэш)`, 'success');
+                await asyncYield();
+
+                setStep('model', 'completed', `Модель ${selectedModel} уже загружена`, 100);
             }
 
             // Шаг 2: Декодирование аудио — ПОКАЗЫВАЕМ ЧТО НАЧАЛИ
             log('🔊 Начало декодирования аудио...', 'info');
+            await asyncYield();
+
             setStep('decode', 'active', 'Декодирование файла...', 0);
             startTimer('timer-decode', 'timer-text-decode');
             showStatus('🔊 Декодирование аудио... это может занять время для больших файлов', 'loading');
@@ -815,15 +1012,20 @@
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             const audioContext = new AudioContext();
             log(`🔧 Создан AudioContext: ${audioContext.sampleRate} Гц`, 'info');
+            await asyncYield();
 
             log('📥 Чтение файла в ArrayBuffer...', 'info');
+            await asyncYield();
+
             const arrayBuffer = await selectedFile.arrayBuffer();
             const arrayBufferSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(1);
             logMemory();
             log(`✅ Файл прочитан: ${arrayBufferSizeMB} МБ (${arrayBuffer.byteLength} байт)`, 'success');
+            await asyncYield();
 
             log('🎵 Декодирование аудиоданных (ЭТО МОЖЕТ ЗАНЯТЬ ВРЕМЯ)...', 'info');
             logMemory();
+            await asyncYield();
 
             // Декодирование — это синхронная блокирующая операция
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
@@ -832,10 +1034,13 @@
             const decodeTime = ((decodeEnd - decodeStart) / 1000).toFixed(1);
             logMemory();
             log(`✅ Декодирование завершено за ${decodeTime} сек`, 'success');
+            await asyncYield();
 
             // Проверка длительности ПОСЛЕ декодирования
             if (audioBuffer.duration > 3600) { // > 1 час
                 log(`⚠️ Файл очень длинный: ${Math.floor(audioBuffer.duration/60)} минут`, 'warn');
+                await asyncYield();
+
                 stopDecodeTimer(); // <-- Останавливаем таймер перед алертом
                 if (!confirm(`⚠️ Файл длится ${Math.floor(audioBuffer.duration/60)} минут.\nОбработка может занять очень много времени и памяти.\nПродолжить?`)) {
                     log('❌ Пользователь отменил обработку длинного файла', 'warn');
@@ -843,6 +1048,7 @@
                     return;
                 }
                 log('✅ Пользователь подтвердил обработку длинного файла', 'success');
+                await asyncYield();
                 // Таймер уже остановлен, не перезапускаем
             }
 
@@ -862,8 +1068,9 @@
             logMemory();
             log(`🎉 Транскрипция завершена за ${elapsed} сек`, 'success');
             log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+            await asyncYield();
 
-            showStatus(`✅ Готово! Обработка заняла ${elapsed} сек`, 'success');
+            showStatus(`✅ Готово! Обработка заняла ${elapsed} сек (модель: ${selectedModel})`, 'success');
 
         } catch (err) {
             console.error('Ошибка транскрипции:', err);
@@ -874,6 +1081,7 @@
         } finally {
             transcribeBtn.disabled = false;
             stopTimer();
+            stopHeartbeat();
             if (memoryCheckInterval) {
                 clearInterval(memoryCheckInterval);
                 memoryCheckInterval = null;
@@ -934,6 +1142,9 @@
 
     transcribeBtn.addEventListener('click', transcribe);
 
+    // Копирование через addEventListener - ИСПРАВЛЕНО
+    copyBtn.addEventListener('click', copyResult);
+
     ['dragover', 'dragenter'].forEach(evt => {
         dropzone.addEventListener(evt, (e) => {
             e.preventDefault();
@@ -960,18 +1171,19 @@
         debugLog.classList.toggle('show');
     });
 
+    // Выбор модели
+    document.querySelectorAll('.model-option').forEach(option => {
+        option.addEventListener('click', () => {
+            document.querySelectorAll('.model-option').forEach(o => o.classList.remove('selected'));
+            option.classList.add('selected');
+            selectedModel = option.dataset.model;
+            log(`Выбрана модель: ${selectedModel}`, 'info');
+        });
+    });
+
     // Preload model on page load for faster first transcription
     window.addEventListener('load', () => {
-        log('🌐 Страница загружена, начинаю предзагрузку модели...', 'info');
-        showStatus('📥 Предзагрузка модели Whisper (один раз)...', 'warning');
-        initModel().then(() => {
-            hideStatus();
-            log('✅ Модель предзагружена успешно', 'success');
-        }).catch(err => {
-            console.warn('Не удалось предзагрузить модель:', err);
-            log(`⚠️ Не удалось предзагрузить модель: ${err.message}`, 'warn');
-            hideStatus();
-        });
+        log('🌐 Страница загружена', 'info');
     });
 </script>
 </body>
