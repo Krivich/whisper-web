@@ -35,10 +35,10 @@
             font-size: 0.9rem;
             color: #666;
             margin-top: 1rem;
-            padding: 0.5rem;
-            background: #fff3cd;
+            padding: 0.75rem;
+            background: #e3f2fd;
             border-radius: 4px;
-            border-left: 4px solid #ffc107;
+            border-left: 4px solid #2196F3;
         }
 
         button {
@@ -67,10 +67,18 @@
             font-weight: 600;
             margin-bottom: 1rem;
             color: #333;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .progress-title .info {
+            color: #6c757d;
+            font-size: 0.9rem;
+            cursor: help;
         }
         .step {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             padding: 0.75rem 0;
             border-bottom: 1px solid #eee;
         }
@@ -91,6 +99,7 @@
         .step-icon.pending { background: #e9ecef; color: #6c757d; }
         .step-icon.active { background: #ffc107; color: #212529; animation: pulse 1.5s infinite; }
         .step-icon.completed { background: #28a745; color: white; }
+        .step-icon.skipped { background: #6c757d; color: white; }
         .step-icon.error { background: #dc3545; color: white; }
         .step-content {
             flex: 1;
@@ -98,10 +107,20 @@
         .step-title {
             font-weight: 500;
             margin-bottom: 0.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
         .step-desc {
             font-size: 0.85rem;
             color: #6c757d;
+        }
+        .step-note {
+            font-size: 0.8rem;
+            color: #17a2b8;
+            margin-top: 0.25rem;
+            padding-left: 1.5rem;
+            font-style: italic;
         }
         @keyframes pulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
@@ -173,7 +192,7 @@
         }
         .metrics {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 1rem;
             margin-top: 1rem;
             font-size: 0.9rem;
@@ -206,28 +225,7 @@
             background: #f8f9fa;
             border-radius: 4px;
             margin-top: 1rem;
-        }
-
-        /* Loading spinner */
-        .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #4CAF50;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin-right: 0.5rem;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-
-        .step-details {
-            font-size: 0.8rem;
-            color: #495057;
-            margin-top: 0.25rem;
-            padding-left: 1.5rem;
+            font-family: 'Segoe UI', Roboto, monospace;
         }
 
         /* Live timer */
@@ -237,6 +235,21 @@
             margin-top: 0.5rem;
             padding-left: 1.5rem;
             font-family: monospace;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .spinner-mini {
+            width: 12px;
+            height: 12px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #4CAF50;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
@@ -251,10 +264,8 @@
 </div>
 
 <div class="disclaimer">
-    ⚠️ <strong>Рекомендации:</strong><br>
-    • Файлы до 50 МБ обрабатываются быстро (~1-2 мин)<br>
-    • Файлы 50-100 МБ: ~2-5 минут<br>
-    • Файлы >100 МБ: может занять 5+ минут
+    💡 <strong>Оптимизация:</strong> Ресемплирование выполняется внутри модели Whisper — дополнительная обработка не требуется.<br>
+    ⚠️ Файлы до 50 МБ: ~1-2 мин • 50-100 МБ: ~2-4 мин • >100 МБ: 5+ мин (зависит от CPU)
 </div>
 
 <button id="transcribeBtn" disabled>▶️ Начать распознавание</button>
@@ -262,7 +273,10 @@
 <div id="status" class="hidden"></div>
 
 <div class="progress-container" id="progressContainer" style="display: none;">
-    <div class="progress-title">📋 Ход выполнения</div>
+    <div class="progress-title">
+        📋 Ход выполнения
+        <span class="info" title="Ресемплирование не требуется — модель Whisper автоматически приводит аудио к нужному формату (16 кГц моно)">ℹ️</span>
+    </div>
 
     <div class="step" id="step-model">
         <div class="step-icon pending" id="icon-model">1</div>
@@ -286,20 +300,16 @@
     </div>
 
     <div class="step" id="step-resample">
-        <div class="step-icon pending" id="icon-resample">3</div>
+        <div class="step-icon skipped" id="icon-resample">⊘</div>
         <div class="step-content">
             <div class="step-title">Ресемплирование</div>
-            <div class="step-desc">Приведение к формату 16 кГц моно</div>
-            <div class="step-details" id="detail-resample" style="display: none;"></div>
-            <div class="progress-bar-container" id="progress-resample" style="display: none;">
-                <div class="progress-bar" id="progress-bar-resample"></div>
-            </div>
-            <div class="live-timer" id="timer-resample" style="display: none;">⏱️ Прошло: 00:00</div>
+            <div class="step-desc">Пропущено — выполняется внутри модели</div>
+            <div class="step-note">✅ Whisper автоматически приводит аудио к 16 кГц моно</div>
         </div>
     </div>
 
     <div class="step" id="step-transcribe">
-        <div class="step-icon pending" id="icon-transcribe">4</div>
+        <div class="step-icon pending" id="icon-transcribe">3</div>
         <div class="step-content">
             <div class="step-title">Распознавание речи</div>
             <div class="step-desc">Преобразование аудио в текст</div>
@@ -307,7 +317,10 @@
             <div class="progress-bar-container" id="progress-transcribe" style="display: none;">
                 <div class="progress-bar" id="progress-bar-transcribe"></div>
             </div>
-            <div class="live-timer" id="timer-transcribe" style="display: none;">⏱️ Прошло: 00:00</div>
+            <div class="live-timer" id="timer-transcribe" style="display: none;">
+                <span class="spinner-mini"></span>
+                <span id="timer-text">⏱️ Прошло: 00:00</span>
+            </div>
         </div>
     </div>
 
@@ -373,7 +386,7 @@
     const steps = {
         model: { icon: 'icon-model', detail: 'detail-model', progress: 'progress-bar-model', container: 'progress-model' },
         decode: { icon: 'icon-decode', detail: 'detail-decode' },
-        resample: { icon: 'icon-resample', detail: 'detail-resample', progress: 'progress-bar-resample', container: 'progress-resample', timer: 'timer-resample' },
+        resample: { icon: 'icon-resample' }, // skipped
         transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe', timer: 'timer-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
     };
@@ -385,7 +398,7 @@
         const detail = document.getElementById(step.detail);
 
         icon.className = `step-icon ${status}`;
-        if (message) {
+        if (message && detail) {
             detail.textContent = message;
             detail.style.display = 'block';
         }
@@ -403,13 +416,14 @@
     function startTimer(timerId) {
         let seconds = 0;
         const timerEl = document.getElementById(timerId);
-        timerEl.style.display = 'block';
+        const timerText = document.getElementById('timer-text');
+        timerEl.style.display = 'flex';
 
         timerInterval = setInterval(() => {
             seconds++;
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
-            timerEl.textContent = `⏱️ Прошло: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            timerText.textContent = `⏱️ Прошло: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
         }, 1000);
     }
 
@@ -460,100 +474,61 @@
         }
     }
 
-    // Ресемплирование с прогрессом
-    async function resampleAudio(audioBuffer) {
-        return new Promise((resolve, reject) => {
-            try {
-                // Создаем контекст для ресемплирования
-                const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
-                const source = offlineCtx.createBufferSource();
-
-                // Если стерео - смешиваем в моно
-                if (audioBuffer.numberOfChannels > 1) {
-                    const splitter = offlineCtx.createChannelSplitter(audioBuffer.numberOfChannels);
-                    const merger = offlineCtx.createChannelMerger(1);
-
-                    source.buffer = audioBuffer;
-                    source.connect(splitter);
-
-                    // Смешиваем все каналы
-                    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
-                        const gain = offlineCtx.createGain();
-                        gain.gain.value = 1 / audioBuffer.numberOfChannels;
-                        splitter.connect(gain, i);
-                        gain.connect(merger, 0, 0);
-                    }
-
-                    merger.connect(offlineCtx.destination);
-                } else {
-                    source.buffer = audioBuffer;
-                    source.connect(offlineCtx.destination);
-                }
-
-                source.start();
-
-                // Рендерим с обработчиком завершения
-                offlineCtx.startRendering().then((renderedBuffer) => {
-                    resolve({
-                        audioData: renderedBuffer.getChannelData(0),
-                        sampleRate: 16000,
-                        duration: renderedBuffer.duration
-                    });
-                }).catch(reject);
-
-            } catch (err) {
-                reject(err);
-            }
-        });
-    }
-
-    // Обработка аудио
+    // Обработка аудио БЕЗ ресемплирования
     async function transcribeAudio(audioBuffer) {
         // Шаг 2: Декодирование
-        setStep('decode', 'completed', `Успешно: ${audioBuffer.numberOfChannels} канала(ов), ${audioBuffer.sampleRate} Гц`);
+        setStep('decode', 'completed', `Успешно: ${audioBuffer.numberOfChannels} канала(ов), ${audioBuffer.sampleRate} Гц, ${audioBuffer.duration.toFixed(1)} сек`);
 
-        // Шаг 3: Ресемплирование
-        setStep('resample', 'active', 'Преобразование в 16 кГц моно...', 0);
-        startTimer('timer-resample');
+        // Шаг 3: Ресемплирование — ПРОПУЩЕН (выполняется внутри модели)
+        setStep('resample', 'skipped');
+
+        // Шаг 4: Распознавание — передаем сырые данные
+        setStep('transcribe', 'active', 'Анализ речи...', 0);
+        startTimer('timer-transcribe');
 
         try {
-            const resampled = await resampleAudio(audioBuffer);
+            // Берем первый канал (или смешиваем если стерео)
+            let audioData;
+            if (audioBuffer.numberOfChannels > 1) {
+                // Простое смешивание каналов в моно для улучшения качества
+                const left = audioBuffer.getChannelData(0);
+                const right = audioBuffer.getChannelData(1);
+                audioData = new Float32Array(left.length);
+                for (let i = 0; i < left.length; i++) {
+                    audioData[i] = (left[i] + right[i]) / 2;
+                }
+            } else {
+                audioData = audioBuffer.getChannelData(0);
+            }
 
-            stopTimer();
-            setStep('resample', 'completed', `Ресемплировано: 1 канал, 16000 Гц, ${resampled.duration.toFixed(1)} сек`, 100);
-            document.getElementById('timer-resample').style.display = 'none';
+            // Адаптивные параметры для больших файлов
+            const duration = audioBuffer.duration;
+            const chunkLength = duration > 180 ? 15 : (duration > 60 ? 20 : 30);
 
-            // Шаг 4: Распознавание
-            setStep('transcribe', 'active', 'Анализ речи...', 0);
-            startTimer('timer-transcribe');
-
-            // Используем более мелкие чанки для больших файлов
-            const chunkLength = audioBuffer.duration > 120 ? 15 : 30;
-            const strideLength = chunkLength / 6;
-
-            const result = await transcriber(resampled.audioData, {
+            const result = await transcriber(audioData, {
                 chunk_length_s: chunkLength,
-                stride_length_s: strideLength,
+                stride_length_s: chunkLength / 6,
                 language: 'ru',
                 task: 'transcribe',
+                return_timestamps: false,
                 progress_callback: (data) => {
                     if (data.status === 'processing' && data.current_chunk && data.total_chunks) {
                         const progress = ((data.current_chunk / data.total_chunks) * 100).toFixed(1);
                         setStep('transcribe', 'active',
-                            `Обработка: чанк ${data.current_chunk}/${data.total_chunks} (${chunkLength}с)`,
+                            `Обработка: фрагмент ${data.current_chunk}/${data.total_chunks}`,
                             parseFloat(progress));
                     }
                 }
             });
 
             stopTimer();
-            setStep('transcribe', 'completed', 'Текст распознан', 100);
+            setStep('transcribe', 'completed', `Распознано ${result.text.length} символов`, 100);
             document.getElementById('timer-transcribe').style.display = 'none';
 
             return result.text;
         } catch (err) {
             stopTimer();
-            setStep('resample', 'error');
+            setStep('transcribe', 'error');
             throw err;
         }
     }
@@ -568,6 +543,9 @@
             setTimeout(() => {
                 btn.textContent = original;
             }, 2000);
+        }).catch(err => {
+            console.error('Ошибка копирования:', err);
+            alert('Не удалось скопировать текст');
         });
     }
 
@@ -576,11 +554,11 @@
         if (!selectedFile) return;
 
         // Проверка размера
-        const maxSize = 200 * 1024 * 1024; // 200 МБ
+        const maxSize = 250 * 1024 * 1024; // 250 МБ
         const fileSizeMB = (selectedFile.size / 1024 / 1024).toFixed(1);
 
         if (selectedFile.size > maxSize) {
-            if (!confirm(`⚠️ Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nОбработка может занять 10+ минут.\nПродолжить?`)) {
+            if (!confirm(`⚠️ Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nОбработка может занять 10+ минут и потребовать много памяти.\nПродолжить?`)) {
                 return;
             }
         }
@@ -590,7 +568,11 @@
         // Сброс прогресса
         Object.keys(steps).forEach(step => {
             const stepConfig = steps[step];
-            setStep(step, step === 'model' ? 'active' : 'pending', '', 0);
+            if (step === 'resample') {
+                setStep(step, 'skipped');
+            } else {
+                setStep(step, step === 'model' ? 'active' : 'pending', '', 0);
+            }
             if (stepConfig.container) {
                 document.getElementById(stepConfig.container).style.display = 'none';
             }
@@ -607,13 +589,26 @@
             showStatus('🚀 Начинаю обработку...', 'loading');
             transcribeBtn.disabled = true;
 
-            // Шаг 1: Загрузка модели
-            await initModel();
+            // Шаг 1: Загрузка модели (если еще не загружена)
+            if (!transcriber) {
+                await initModel();
+            } else {
+                setStep('model', 'completed', 'Модель уже загружена', 100);
+            }
 
             // Шаг 2-4: Обработка аудио
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            showStatus('🔊 Декодирование аудио...', 'loading');
+
             const arrayBuffer = await selectedFile.arrayBuffer();
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+            // Проверка длительности
+            if (audioBuffer.duration > 3600) { // > 1 час
+                if (!confirm(`⚠️ Файл длится ${Math.floor(audioBuffer.duration/60)} минут.\nОбработка может занять очень много времени и памяти.\nПродолжить?`)) {
+                    return;
+                }
+            }
 
             const text = await transcribeAudio(audioBuffer);
 
@@ -669,7 +664,11 @@
 
         // Сброс прогресса
         Object.keys(steps).forEach(step => {
-            setStep(step, 'pending', '', 0);
+            if (step === 'resample') {
+                setStep(step, 'skipped');
+            } else {
+                setStep(step, 'pending', '', 0);
+            }
         });
         progressContainer.style.display = 'none';
         resultContainer.style.display = 'none';
@@ -708,6 +707,18 @@
         if (e.dataTransfer.files.length) {
             handleFileSelect(e.dataTransfer.files[0]);
         }
+    });
+
+    // Preload model on page load for faster first transcription
+    window.addEventListener('load', () => {
+        showStatus('📥 Предзагрузка модели Whisper (один раз)...', 'warning');
+        initModel().then(() => {
+            hideStatus();
+            console.log('Модель предзагружена');
+        }).catch(err => {
+            console.warn('Не удалось предзагрузить модель:', err);
+            hideStatus();
+        });
     });
 </script>
 </body>
