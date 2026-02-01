@@ -230,12 +230,13 @@
             padding-left: 1.5rem;
         }
 
-        /* Worker status */
-        .worker-status {
+        /* Live timer */
+        .live-timer {
             font-size: 0.85rem;
             color: #666;
             margin-top: 0.5rem;
             padding-left: 1.5rem;
+            font-family: monospace;
         }
     </style>
 </head>
@@ -251,8 +252,9 @@
 
 <div class="disclaimer">
     ⚠️ <strong>Рекомендации:</strong><br>
-    • Файлы до 50 МБ обрабатываются быстро<br>
-    • Большие файлы (>100 МБ) могут зависнуть или не обработаться
+    • Файлы до 50 МБ обрабатываются быстро (~1-2 мин)<br>
+    • Файлы 50-100 МБ: ~2-5 минут<br>
+    • Файлы >100 МБ: может занять 5+ минут
 </div>
 
 <button id="transcribeBtn" disabled>▶️ Начать распознавание</button>
@@ -292,7 +294,7 @@
             <div class="progress-bar-container" id="progress-resample" style="display: none;">
                 <div class="progress-bar" id="progress-bar-resample"></div>
             </div>
-            <div class="worker-status" id="worker-status" style="display: none;"></div>
+            <div class="live-timer" id="timer-resample" style="display: none;">⏱️ Прошло: 00:00</div>
         </div>
     </div>
 
@@ -305,6 +307,7 @@
             <div class="progress-bar-container" id="progress-transcribe" style="display: none;">
                 <div class="progress-bar" id="progress-bar-transcribe"></div>
             </div>
+            <div class="live-timer" id="timer-transcribe" style="display: none;">⏱️ Прошло: 00:00</div>
         </div>
     </div>
 
@@ -341,6 +344,10 @@
             <div class="metric-value" id="metric-words">-</div>
             <div class="metric-label">Слов</div>
         </div>
+        <div class="metric-card">
+            <div class="metric-value" id="metric-time">-</div>
+            <div class="metric-label">Время обработки</div>
+        </div>
     </div>
 
     <div class="result-text" id="resultText"></div>
@@ -352,9 +359,7 @@
     let transcriber = null;
     let selectedFile = null;
     let startTime = null;
-    let worker = null;
-    let workerResolve = null;
-    let workerReject = null;
+    let timerInterval = null;
 
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
@@ -368,8 +373,8 @@
     const steps = {
         model: { icon: 'icon-model', detail: 'detail-model', progress: 'progress-bar-model', container: 'progress-model' },
         decode: { icon: 'icon-decode', detail: 'detail-decode' },
-        resample: { icon: 'icon-resample', detail: 'detail-resample', progress: 'progress-bar-resample', container: 'progress-resample', status: 'worker-status' },
-        transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe' },
+        resample: { icon: 'icon-resample', detail: 'detail-resample', progress: 'progress-bar-resample', container: 'progress-resample', timer: 'timer-resample' },
+        transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe', timer: 'timer-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
     };
 
@@ -394,6 +399,27 @@
         }
     }
 
+    // Таймер для длительных операций
+    function startTimer(timerId) {
+        let seconds = 0;
+        const timerEl = document.getElementById(timerId);
+        timerEl.style.display = 'block';
+
+        timerInterval = setInterval(() => {
+            seconds++;
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            timerEl.textContent = `⏱️ Прошло: ${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }, 1000);
+    }
+
+    function stopTimer() {
+        if (timerInterval) {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+    }
+
     function showStatus(msg, type = 'loading') {
         statusEl.textContent = msg;
         statusEl.className = type === 'loading' ? 'status-loading' :
@@ -404,64 +430,6 @@
 
     function hideStatus() {
         statusEl.classList.add('hidden');
-    }
-
-    // Создание и управление воркером
-    function createWorker() {
-        const workerCode = `
-            self.addEventListener('message', async (e) => {
-                const { audioData, sampleRate, duration, channels } = e.data;
-
-                try {
-                    // Создаем аудио контекст для ресемплирования
-                    const offlineCtx = new OfflineAudioContext(1, duration * 16000, 16000);
-                    const buffer = offlineCtx.createBuffer(channels, audioData.length / channels, sampleRate);
-
-                    // Копируем данные в буфер
-                    if (channels === 1) {
-                        buffer.copyToChannel(audioData, 0);
-                    } else {
-                        // Для стерео - смешиваем каналы
-                        const left = audioData.slice(0, audioData.length / 2);
-                        const right = audioData.slice(audioData.length / 2);
-                        const mono = new Float32Array(left.length);
-                        for (let i = 0; i < left.length; i++) {
-                            mono[i] = (left[i] + right[i]) / 2;
-                        }
-                        buffer.copyToChannel(mono, 0);
-                    }
-
-                    const source = offlineCtx.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(offlineCtx.destination);
-                    source.start();
-
-                    // Рендерим с прогрессом
-                    let lastProgress = 0;
-                    offlineCtx.addEventListener('complete', (event) => {
-                        const renderedBuffer = event.renderedBuffer;
-                        const audioData = renderedBuffer.getChannelData(0);
-
-                        self.postMessage({
-                            type: 'complete',
-                            audioData: audioData,
-                            sampleRate: 16000,
-                            duration: renderedBuffer.duration
-                        });
-                    });
-
-                    offlineCtx.startRendering().catch((err) => {
-                        self.postMessage({ type: 'error', error: err.message });
-                    });
-
-                } catch (err) {
-                    self.postMessage({ type: 'error', error: err.message });
-                }
-            });
-        `;
-
-        const blob = new Blob([workerCode], { type: 'application/javascript' });
-        return new Worker(URL.createObjectURL(blob));
     }
 
     // Инициализация модели
@@ -492,36 +460,50 @@
         }
     }
 
-    // Ресемплирование в воркере
-    function resampleAudioInWorker(audioBuffer) {
+    // Ресемплирование с прогрессом
+    async function resampleAudio(audioBuffer) {
         return new Promise((resolve, reject) => {
-            // Создаем воркер если его нет
-            if (!worker) {
-                worker = createWorker();
-                worker.onmessage = (e) => {
-                    if (e.data.type === 'complete') {
-                        workerResolve(e.data);
-                    } else if (e.data.type === 'error') {
-                        workerReject(new Error(e.data.error));
-                    } else if (e.data.type === 'progress') {
-                        setStep('resample', 'active', `Прогресс: ${e.data.progress.toFixed(1)}%`, e.data.progress);
+            try {
+                // Создаем контекст для ресемплирования
+                const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
+                const source = offlineCtx.createBufferSource();
+
+                // Если стерео - смешиваем в моно
+                if (audioBuffer.numberOfChannels > 1) {
+                    const splitter = offlineCtx.createChannelSplitter(audioBuffer.numberOfChannels);
+                    const merger = offlineCtx.createChannelMerger(1);
+
+                    source.buffer = audioBuffer;
+                    source.connect(splitter);
+
+                    // Смешиваем все каналы
+                    for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
+                        const gain = offlineCtx.createGain();
+                        gain.gain.value = 1 / audioBuffer.numberOfChannels;
+                        splitter.connect(gain, i);
+                        gain.connect(merger, 0, 0);
                     }
-                };
+
+                    merger.connect(offlineCtx.destination);
+                } else {
+                    source.buffer = audioBuffer;
+                    source.connect(offlineCtx.destination);
+                }
+
+                source.start();
+
+                // Рендерим с обработчиком завершения
+                offlineCtx.startRendering().then((renderedBuffer) => {
+                    resolve({
+                        audioData: renderedBuffer.getChannelData(0),
+                        sampleRate: 16000,
+                        duration: renderedBuffer.duration
+                    });
+                }).catch(reject);
+
+            } catch (err) {
+                reject(err);
             }
-
-            workerResolve = resolve;
-            workerReject = reject;
-
-            // Отправляем данные в воркер
-            const channelData = audioBuffer.getChannelData(0);
-            const data = {
-                audioData: channelData,
-                sampleRate: audioBuffer.sampleRate,
-                duration: audioBuffer.duration,
-                channels: audioBuffer.numberOfChannels
-            };
-
-            worker.postMessage(data);
         });
     }
 
@@ -530,41 +512,48 @@
         // Шаг 2: Декодирование
         setStep('decode', 'completed', `Успешно: ${audioBuffer.numberOfChannels} канала(ов), ${audioBuffer.sampleRate} Гц`);
 
-        // Шаг 3: Ресемплирование в воркере
+        // Шаг 3: Ресемплирование
         setStep('resample', 'active', 'Преобразование в 16 кГц моно...', 0);
-        document.getElementById('worker-status').style.display = 'block';
-        document.getElementById('worker-status').textContent = '🔄 Обработка в фоновом потоке...';
+        startTimer('timer-resample');
 
         try {
-            const resampled = await resampleAudioInWorker(audioBuffer);
+            const resampled = await resampleAudio(audioBuffer);
 
+            stopTimer();
             setStep('resample', 'completed', `Ресемплировано: 1 канал, 16000 Гц, ${resampled.duration.toFixed(1)} сек`, 100);
-            document.getElementById('worker-status').textContent = '✅ Завершено';
+            document.getElementById('timer-resample').style.display = 'none';
 
             // Шаг 4: Распознавание
             setStep('transcribe', 'active', 'Анализ речи...', 0);
+            startTimer('timer-transcribe');
 
             // Используем более мелкие чанки для больших файлов
-            const chunkLength = audioBuffer.duration > 60 ? 15 : 30;
+            const chunkLength = audioBuffer.duration > 120 ? 15 : 30;
+            const strideLength = chunkLength / 6;
 
             const result = await transcriber(resampled.audioData, {
                 chunk_length_s: chunkLength,
-                stride_length_s: chunkLength / 6,
+                stride_length_s: strideLength,
                 language: 'ru',
                 task: 'transcribe',
                 progress_callback: (data) => {
-                    if (data.status === 'processing') {
+                    if (data.status === 'processing' && data.current_chunk && data.total_chunks) {
                         const progress = ((data.current_chunk / data.total_chunks) * 100).toFixed(1);
-                        setStep('transcribe', 'active', `Обработка чанка ${data.current_chunk}/${data.total_chunks}`, parseFloat(progress));
+                        setStep('transcribe', 'active',
+                            `Обработка: чанк ${data.current_chunk}/${data.total_chunks} (${chunkLength}с)`,
+                            parseFloat(progress));
                     }
                 }
             });
 
+            stopTimer();
             setStep('transcribe', 'completed', 'Текст распознан', 100);
+            document.getElementById('timer-transcribe').style.display = 'none';
+
             return result.text;
         } catch (err) {
+            stopTimer();
             setStep('resample', 'error');
-            document.getElementById('worker-status').textContent = `❌ Ошибка: ${err.message}`;
             throw err;
         }
     }
@@ -587,11 +576,11 @@
         if (!selectedFile) return;
 
         // Проверка размера
-        const maxSize = 150 * 1024 * 1024; // 150 МБ
+        const maxSize = 200 * 1024 * 1024; // 200 МБ
         const fileSizeMB = (selectedFile.size / 1024 / 1024).toFixed(1);
 
         if (selectedFile.size > maxSize) {
-            if (!confirm(`Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nЭто может занять много времени.\nПродолжить?`)) {
+            if (!confirm(`⚠️ Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nОбработка может занять 10+ минут.\nПродолжить?`)) {
                 return;
             }
         }
@@ -605,8 +594,8 @@
             if (stepConfig.container) {
                 document.getElementById(stepConfig.container).style.display = 'none';
             }
-            if (stepConfig.status) {
-                document.getElementById(stepConfig.status).style.display = 'none';
+            if (stepConfig.timer) {
+                document.getElementById(stepConfig.timer).style.display = 'none';
             }
         });
 
@@ -619,7 +608,7 @@
             transcribeBtn.disabled = true;
 
             // Шаг 1: Загрузка модели
-            const model = await initModel();
+            await initModel();
 
             // Шаг 2-4: Обработка аудио
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -647,11 +636,7 @@
             showStatus(`❌ Ошибка: ${err.message || 'Неизвестная ошибка'}`, 'error');
         } finally {
             transcribeBtn.disabled = false;
-            // Очистка воркера
-            if (worker) {
-                worker.terminate();
-                worker = null;
-            }
+            stopTimer();
         }
     }
 
@@ -672,6 +657,10 @@
         // Слова
         const words = text.trim().split(/\s+/).filter(w => w).length;
         document.getElementById('metric-words').textContent = words;
+
+        // Время обработки
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        document.getElementById('metric-time').textContent = `${elapsed} сек`;
     }
 
     function handleFileSelect(file) {
