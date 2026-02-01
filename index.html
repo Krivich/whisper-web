@@ -34,6 +34,7 @@
         .loading { background: #FFF3CD; color: #856404; }
         .success { background: #D4EDDA; color: #155724; }
         .error { background: #F8D7DA; color: #721C24; }
+        .warning { background: #FFF3CD; color: #856404; }
         #result {
             white-space: pre-wrap;
             padding: 1rem;
@@ -55,6 +56,23 @@
         }
         button:hover { background: #45a049; }
         button:disabled { background: #ccc; cursor: not-allowed; }
+        progress {
+            width: 100%;
+            height: 20px;
+            margin: 0.5rem 0;
+            display: none;
+        }
+        progress.visible {
+            display: block;
+        }
+        .disclaimer {
+            font-size: 0.9rem;
+            color: #666;
+            margin-top: 1rem;
+            padding: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
@@ -67,7 +85,17 @@
     <input type="file" id="fileInput" accept="audio/*,video/*" class="hidden">
 </div>
 
+<div class="disclaimer">
+    ⚠️ <strong>Рекомендации:</strong><br>
+    • Файлы до 50 МБ обрабатываются быстро<br>
+    • Большие файлы (>100 МБ) могут зависнуть или не обработаться<br>
+    • Для YouTube: скачайте аудио через yt-dlp или онлайн-конвертер
+</div>
+
 <button id="transcribeBtn" disabled>Распознать</button>
+
+<progress id="progressBar" value="0" max="100"></progress>
+
 <div id="status" class="hidden"></div>
 <div id="result"></div>
 
@@ -82,6 +110,7 @@
     const transcribeBtn = document.getElementById('transcribeBtn');
     const statusEl = document.getElementById('status');
     const resultEl = document.getElementById('result');
+    const progressBar = document.getElementById('progressBar');
 
     function showStatus(msg, type = 'loading') {
         statusEl.textContent = msg;
@@ -93,37 +122,54 @@
         statusEl.classList.add('hidden');
     }
 
+    function showProgress(value = 0) {
+        progressBar.value = value;
+        progressBar.classList.add('visible');
+    }
+
+    function hideProgress() {
+        progressBar.classList.remove('visible');
+    }
+
+    // Инициализация модели
     async function initModel() {
         if (transcriber) return transcriber;
 
         showStatus('⏳ Загружаю модель whisper-tiny (75 МБ)...');
+        showProgress(0);
+
         try {
-            // Загружаем модель ТОЛЬКО из CDN, без попыток локальной загрузки
             transcriber = await pipeline(
                 'automatic-speech-recognition',
                 'Xenova/whisper-tiny',
                 {
-                    cache_dir: undefined, // отключаем локальный кэш
+                    cache_dir: undefined,
                     progress_callback: (data) => {
                         if (data.status === 'downloading') {
                             const pct = ((data.loaded / data.total) * 100).toFixed(1);
                             showStatus(`⏳ Загрузка модели: ${pct}%`);
+                            showProgress(parseFloat(pct));
                         }
                     }
                 }
             );
+            hideProgress();
             showStatus('✅ Модель загружена!', 'success');
             setTimeout(hideStatus, 1000);
             return transcriber;
         } catch (err) {
+            hideProgress();
             console.error('Ошибка загрузки модели:', err);
             showStatus(`❌ Ошибка: ${err.message || 'Не удалось загрузить модель'}`, 'error');
             throw err;
         }
     }
 
+    // Обработка аудио
     async function transcribeAudio(audioBuffer) {
-        // Ресемплирование в 16 кГц моно
+        showProgress(0);
+        showStatus('🎵 Ресемплирую аудио в 16 кГц...');
+
         const offlineCtx = new OfflineAudioContext(1, audioBuffer.duration * 16000, 16000);
         const source = offlineCtx.createBufferSource();
         source.buffer = audioBuffer;
@@ -133,6 +179,7 @@
         const audioData = renderedBuffer.getChannelData(0);
 
         showStatus('🎤 Распознаю речь...');
+        showProgress(30);
 
         const result = await transcriber(audioData, {
             chunk_length_s: 30,
@@ -141,15 +188,26 @@
             task: 'transcribe'
         });
 
+        hideProgress();
         return result.text;
     }
 
+    // Основная функция
     async function transcribe() {
         if (!selectedFile) return;
+
+        // Проверка размера файла
+        const maxSize = 100 * 1024 * 1024; // 100 МБ
+        if (selectedFile.size > maxSize) {
+            if (!confirm(`Файл ${selectedFile.name} весит ${(selectedFile.size / 1024 / 1024).toFixed(1)} МБ.\nЭто может занять много времени или зависнуть.\nПродолжить?`)) {
+                return;
+            }
+        }
 
         try {
             showStatus('🎵 Декодирую аудио...');
             transcribeBtn.disabled = true;
+            resultEl.textContent = '';
 
             const audioContext = new AudioContext();
             const arrayBuffer = await selectedFile.arrayBuffer();
@@ -163,6 +221,7 @@
             setTimeout(hideStatus, 2000);
 
         } catch (err) {
+            hideProgress();
             console.error('Ошибка транскрипции:', err);
             showStatus(`❌ ${err.message || 'Неизвестная ошибка'}`, 'error');
         } finally {
@@ -174,13 +233,27 @@
         selectedFile = file;
         transcribeBtn.disabled = false;
         resultEl.textContent = '';
-        showStatus(`Выбран файл: ${file.name}`, 'success');
-        setTimeout(hideStatus, 1500);
+
+        const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+        showStatus(`Выбран файл: ${file.name} (${sizeMb} МБ)`, 'success');
+
+        // Предупреждение для больших файлов
+        if (file.size > 50 * 1024 * 1024) {
+            setTimeout(() => {
+                showStatus(`⚠️ Файл большой (${sizeMb} МБ). Обработка может занять время.`, 'warning');
+            }, 1000);
+        }
+
+        setTimeout(hideStatus, 2000);
     }
 
     // UI события
     dropzone.addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', (e) => e.target.files.length && handleFileSelect(e.target.files[0]));
+
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) handleFileSelect(e.target.files[0]);
+    });
+
     transcribeBtn.addEventListener('click', transcribe);
 
     ['dragover', 'dragenter'].forEach(evt => {
@@ -191,13 +264,17 @@
     });
 
     ['dragleave', 'drop'].forEach(evt => {
-        dropzone.addEventListener(evt, () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener(evt, () => {
+            dropzone.classList.remove('dragover');
+        });
     });
 
     dropzone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropzone.classList.remove('dragover');
-        if (e.dataTransfer.files.length) handleFileSelect(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files.length) {
+            handleFileSelect(e.dataTransfer.files[0]);
+        }
     });
 </script>
 </body>
