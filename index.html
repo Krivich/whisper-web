@@ -70,11 +70,20 @@
             display: flex;
             align-items: center;
             gap: 0.5rem;
+            justify-content: space-between;
         }
         .progress-title .info {
             color: #6c757d;
             font-size: 0.9rem;
             cursor: help;
+        }
+        .memory-stats {
+            font-size: 0.85rem;
+            color: #666;
+            background: #f8f9fa;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-family: monospace;
         }
         .step {
             display: flex;
@@ -262,6 +271,46 @@
             font-size: 0.85rem;
             display: none;
         }
+
+        /* Debug log */
+        .debug-log {
+            background: #2d2d2d;
+            color: #f8f9fa;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            max-height: 300px;
+            overflow-y: auto;
+            line-height: 1.4;
+            display: none;
+        }
+        .debug-log.show {
+            display: block;
+        }
+        .log-entry {
+            margin-bottom: 0.25rem;
+            padding-left: 0.5rem;
+            border-left: 3px solid #4CAF50;
+        }
+        .log-entry.info { border-left-color: #2196F3; color: #90CAF9; }
+        .log-entry.warn { border-left-color: #FF9800; color: #FFCC80; }
+        .log-entry.error { border-left-color: #F44336; color: #EF9A9A; }
+        .log-entry.success { border-left-color: #4CAF50; color: #A5D6A7; }
+        .log-entry.memory { border-left-color: #9C27B0; color: #CE93D8; }
+        .log-time {
+            color: #808080;
+            margin-right: 0.5rem;
+        }
+        .toggle-debug {
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #6c757d;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .toggle-debug:hover { color: #007bff; }
     </style>
 </head>
 <body>
@@ -285,8 +334,8 @@
 
 <div class="progress-container" id="progressContainer" style="display: none;">
     <div class="progress-title">
-        📋 Ход выполнения
-        <span class="info" title="Ресемплирование не требуется — модель Whisper автоматически приводит аудио к нужному формату (16 кГц моно)">ℹ️</span>
+        <span>📋 Ход выполнения</span>
+        <span class="memory-stats" id="memory-stats">RAM: —</span>
     </div>
 
     <div class="step" id="step-model">
@@ -352,6 +401,11 @@
     </div>
 </div>
 
+<div class="debug-log" id="debugLog">
+    <div class="log-entry info"><span class="log-time">[00:00:00.000]</span> 📝 Логирование запущено</div>
+</div>
+<span class="toggle-debug" id="toggleDebug">Показать/скрыть логи</span>
+
 <div class="result-container" id="resultContainer" style="display: none;">
     <div class="result-header">
         <div class="result-title">📝 Результат транскрипции</div>
@@ -391,6 +445,8 @@
     let selectedFile = null;
     let startTime = null;
     let timerInterval = null;
+    let logStartTime = Date.now();
+    let memoryCheckInterval = null;
 
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
@@ -399,6 +455,8 @@
     const progressContainer = document.getElementById('progressContainer');
     const resultContainer = document.getElementById('resultContainer');
     const resultText = document.getElementById('resultText');
+    const debugLog = document.getElementById('debugLog');
+    const memoryStats = document.getElementById('memory-stats');
 
     // Шаги прогресса
     const steps = {
@@ -408,6 +466,53 @@
         transcribe: { icon: 'icon-transcribe', detail: 'detail-transcribe', progress: 'progress-bar-transcribe', container: 'progress-transcribe', timer: 'timer-transcribe' },
         complete: { icon: 'icon-complete', detail: 'detail-complete' }
     };
+
+    // ========== ЛОГИРОВАНИЕ ==========
+    function log(message, type = 'info') {
+        const now = Date.now();
+        const elapsed = ((now - logStartTime) / 1000).toFixed(3);
+        const hours = Math.floor(elapsed / 3600);
+        const minutes = Math.floor((elapsed % 3600) / 60);
+        const seconds = (elapsed % 60).toFixed(3).padStart(7, '0');
+        const timestamp = `[${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds}]`;
+
+        // Консоль
+        const consoleMsg = `${timestamp} ${message}`;
+        if (type === 'error') {
+            console.error(consoleMsg);
+        } else if (type === 'warn') {
+            console.warn(consoleMsg);
+        } else if (type === 'success') {
+            console.log('%c' + consoleMsg, 'color: green; font-weight: bold;');
+        } else {
+            console.log(consoleMsg);
+        }
+
+        // UI лог
+        const entry = document.createElement('div');
+        entry.className = `log-entry ${type}`;
+        entry.innerHTML = `<span class="log-time">${timestamp}</span>${message}`;
+        debugLog.appendChild(entry);
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+
+    function logMemory() {
+        if (performance.memory) {
+            const usedMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1);
+            const totalMB = (performance.memory.jsHeapSizeLimit / 1024 / 1024).toFixed(1);
+            const percent = ((performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100).toFixed(1);
+
+            memoryStats.textContent = `RAM: ${usedMB} MB (${percent}%)`;
+
+            // Логируем каждые 500 МБ или при превышении 80%
+            if (usedMB > 500 || percent > 80) {
+                log(`MemoryWarning: ${usedMB} MB / ${totalMB} MB (${percent}%)`, 'warn');
+            }
+
+            return { usedMB, totalMB, percent };
+        }
+        return null;
+    }
 
     // Управление шагами
     function setStep(stepName, status, message = '', progress = 0) {
@@ -447,6 +552,11 @@
             if (seconds > 10 && timerId === 'timer-decode') {
                 document.getElementById('memory-warning').style.display = 'block';
             }
+
+            // Логировать память каждые 5 секунд
+            if (seconds % 5 === 0) {
+                logMemory();
+            }
         }, 1000);
     }
 
@@ -472,9 +582,14 @@
 
     // Инициализация модели
     async function initModel() {
+        log('🚀 Начало загрузки модели Whisper', 'info');
+        logMemory();
+
         setStep('model', 'active', 'Загрузка из CDN...', 0);
 
         try {
+            const modelStart = Date.now();
+
             transcriber = await pipeline(
                 'automatic-speech-recognition',
                 'Xenova/whisper-tiny',
@@ -484,15 +599,28 @@
                         if (data.status === 'downloading') {
                             const pct = ((data.loaded / data.total) * 100).toFixed(1);
                             const size = (data.total / 1024 / 1024).toFixed(1);
-                            setStep('model', 'active', `Загружено: ${pct}% из ${size} МБ`, parseFloat(pct));
+                            const loadedMB = (data.loaded / 1024 / 1024).toFixed(1);
+                            setStep('model', 'active', `Загружено: ${pct}% (${loadedMB}/${size} МБ)`, parseFloat(pct));
+
+                            // Логируем каждый 25%
+                            if (pct % 25 === 0) {
+                                logMemory();
+                            }
                         }
                     }
                 }
             );
+
+            const modelEnd = Date.now();
+            const modelTime = ((modelEnd - modelStart) / 1000).toFixed(1);
+            logMemory();
+            log(`✅ Модель загружена за ${modelTime} сек`, 'success');
+
             setStep('model', 'completed', 'Модель загружена и закэширована', 100);
             return transcriber;
         } catch (err) {
             setStep('model', 'error');
+            log(`❌ Ошибка загрузки модели: ${err.message}`, 'error');
             console.error('Ошибка загрузки модели:', err);
             throw err;
         }
@@ -504,13 +632,19 @@
         const channels = audioBuffer.numberOfChannels;
         const sampleRate = audioBuffer.sampleRate;
         const duration = audioBuffer.duration;
+
+        logMemory();
+        log(`✅ Декодирование завершено: ${channels} канал(а), ${sampleRate} Гц, ${duration.toFixed(1)} сек`, 'success');
+
         setStep('decode', 'completed', `Успешно: ${channels} канала(ов), ${sampleRate} Гц, ${duration.toFixed(1)} сек`);
         stopTimer();
 
         // Шаг 3: Ресемплирование — ПРОПУЩЕН (выполняется внутри модели)
+        log('⊘ Ресемплирование пропущено (выполняется внутри Whisper)', 'info');
         setStep('resample', 'skipped');
 
         // Шаг 4: Распознавание — передаем сырые данные
+        log('🎤 Начало распознавания речи...', 'info');
         setStep('transcribe', 'active', 'Анализ речи...', 0);
         startTimer('timer-transcribe', 'timer-text-transcribe');
 
@@ -518,19 +652,24 @@
             // Берем первый канал (или смешиваем если стерео)
             let audioData;
             if (audioBuffer.numberOfChannels > 1) {
-                // Простое смешивание каналов в моно для улучшения качества
+                log(`🔄 Смешивание ${audioBuffer.numberOfChannels} каналов в моно...`, 'info');
                 const left = audioBuffer.getChannelData(0);
                 const right = audioBuffer.getChannelData(1);
                 audioData = new Float32Array(left.length);
                 for (let i = 0; i < left.length; i++) {
                     audioData[i] = (left[i] + right[i]) / 2;
                 }
+                log(`✅ Смешивание завершено: ${audioData.length} сэмплов`, 'success');
             } else {
                 audioData = audioBuffer.getChannelData(0);
+                log(`✅ Моно аудио: ${audioData.length} сэмплов`, 'success');
             }
 
             // Адаптивные параметры для больших файлов
             const chunkLength = duration > 180 ? 15 : (duration > 60 ? 20 : 30);
+            log(`⚙️ Параметры: чанк=${chunkLength}с, шаг=${(chunkLength/6).toFixed(1)}с`, 'info');
+
+            const transcribeStart = Date.now();
 
             const result = await transcriber(audioData, {
                 chunk_length_s: chunkLength,
@@ -544,18 +683,31 @@
                         setStep('transcribe', 'active',
                             `Обработка: фрагмент ${data.current_chunk}/${data.total_chunks}`,
                             parseFloat(progress));
+
+                        // Логируем каждый 10-й чанк
+                        if (data.current_chunk % 10 === 0 || data.current_chunk === data.total_chunks) {
+                            logMemory();
+                            log(`📊 Чанк ${data.current_chunk}/${data.total_chunks} (${progress}%)`, 'info');
+                        }
                     }
                 }
             });
+
+            const transcribeEnd = Date.now();
+            const transcribeTime = ((transcribeEnd - transcribeStart) / 1000).toFixed(1);
 
             stopTimer();
             setStep('transcribe', 'completed', `Распознано ${result.text.length} символов`, 100);
             document.getElementById('timer-transcribe').style.display = 'none';
 
+            logMemory();
+            log(`✅ Распознавание завершено за ${transcribeTime} сек (${result.text.length} символов)`, 'success');
+
             return result.text;
         } catch (err) {
             stopTimer();
             setStep('transcribe', 'error');
+            log(`❌ Ошибка распознавания: ${err.message}`, 'error');
             throw err;
         }
     }
@@ -580,14 +732,25 @@
     async function transcribe() {
         if (!selectedFile) return;
 
+        // Сброс времени логирования
+        logStartTime = Date.now();
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+        log('🎬 ЗАПУСК НОВОЙ ТРАНСКРИПЦИИ', 'info');
+        log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+
         // Проверка размера
         const maxSize = 250 * 1024 * 1024; // 250 МБ
         const fileSizeMB = (selectedFile.size / 1024 / 1024).toFixed(1);
 
+        log(`📁 Выбран файл: ${selectedFile.name} (${fileSizeMB} МБ)`, 'info');
+
         if (selectedFile.size > maxSize) {
+            log(`⚠️ Файл превышает ${maxSize/1024/1024} МБ`, 'warn');
             if (!confirm(`⚠️ Файл ${selectedFile.name} весит ${fileSizeMB} МБ.\nОбработка может занять 10+ минут и потребовать много памяти.\nПродолжить?`)) {
+                log('❌ Пользователь отменил обработку большого файла', 'warn');
                 return;
             }
+            log('✅ Пользователь подтвердил обработку большого файла', 'success');
         }
 
         startTime = Date.now();
@@ -612,40 +775,62 @@
         progressContainer.style.display = 'block';
         resultContainer.style.display = 'none';
 
+        // Начать мониторинг памяти
+        memoryCheckInterval = setInterval(logMemory, 2000);
+
         try {
             showStatus('🚀 Начинаю обработку...', 'loading');
             transcribeBtn.disabled = true;
 
             // Шаг 1: Загрузка модели (если еще не загружена)
             if (!transcriber) {
+                log('📥 Модель не загружена, начинаю загрузку...', 'info');
                 await initModel();
             } else {
+                log('✅ Модель уже загружена (кэш)', 'success');
                 setStep('model', 'completed', 'Модель уже загружена', 100);
             }
 
             // Шаг 2: Декодирование аудио — ПОКАЗЫВАЕМ ЧТО НАЧАЛИ
+            log('🔊 Начало декодирования аудио...', 'info');
             setStep('decode', 'active', 'Декодирование файла...', 0);
             startTimer('timer-decode', 'timer-text-decode');
             showStatus('🔊 Декодирование аудио... это может занять время для больших файлов', 'loading');
 
+            const decodeStart = Date.now();
+
             // Создаем контекст и декодируем
             const AudioContext = window.AudioContext || window.webkitAudioContext;
             const audioContext = new AudioContext();
+            log(`🔧 Создан AudioContext: ${audioContext.sampleRate} Гц`, 'info');
 
+            log('📥 Чтение файла в ArrayBuffer...', 'info');
             const arrayBuffer = await selectedFile.arrayBuffer();
+            const arrayBufferSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(1);
+            logMemory();
+            log(`✅ Файл прочитан: ${arrayBufferSizeMB} МБ (${arrayBuffer.byteLength} байт)`, 'success');
+
+            log('🎵 Декодирование аудиоданных (ЭТО МОЖЕТ ЗАНЯТЬ ВРЕМЯ)...', 'info');
+            logMemory();
 
             // Декодирование — это синхронная блокирующая операция
             const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
+            const decodeEnd = Date.now();
+            const decodeTime = ((decodeEnd - decodeStart) / 1000).toFixed(1);
+            logMemory();
+            log(`✅ Декодирование завершено за ${decodeTime} сек`, 'success');
+
             // Проверка длительности ПОСЛЕ декодирования
             if (audioBuffer.duration > 3600) { // > 1 час
+                log(`⚠️ Файл очень длинный: ${Math.floor(audioBuffer.duration/60)} минут`, 'warn');
                 stopTimer();
                 if (!confirm(`⚠️ Файл длится ${Math.floor(audioBuffer.duration/60)} минут.\nОбработка может занять очень много времени и памяти.\nПродолжить?`)) {
-                    // Сбросить шаг декодирования
+                    log('❌ Пользователь отменил обработку длинного файла', 'warn');
                     setStep('decode', 'pending');
                     return;
                 }
-                // Возобновить таймер для распознавания
+                log('✅ Пользователь подтвердил обработку длинного файла', 'success');
                 startTimer('timer-decode', 'timer-text-decode');
             }
 
@@ -662,15 +847,25 @@
             updateMetrics(selectedFile, audioBuffer, text);
 
             const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            logMemory();
+            log(`🎉 Транскрипция завершена за ${elapsed} сек`, 'success');
+            log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+
             showStatus(`✅ Готово! Обработка заняла ${elapsed} сек`, 'success');
 
         } catch (err) {
             console.error('Ошибка транскрипции:', err);
+            log(`❌ КРИТИЧЕСКАЯ ОШИБКА: ${err.message}`, 'error');
+            log(`   Stack: ${err.stack}`, 'error');
             setStep('complete', 'error');
             showStatus(`❌ Ошибка: ${err.message || 'Неизвестная ошибка'}`, 'error');
         } finally {
             transcribeBtn.disabled = false;
             stopTimer();
+            if (memoryCheckInterval) {
+                clearInterval(memoryCheckInterval);
+                memoryCheckInterval = null;
+            }
         }
     }
 
@@ -748,14 +943,21 @@
         }
     });
 
+    // Toggle debug log
+    document.getElementById('toggleDebug').addEventListener('click', () => {
+        debugLog.classList.toggle('show');
+    });
+
     // Preload model on page load for faster first transcription
     window.addEventListener('load', () => {
+        log('🌐 Страница загружена, начинаю предзагрузку модели...', 'info');
         showStatus('📥 Предзагрузка модели Whisper (один раз)...', 'warning');
         initModel().then(() => {
             hideStatus();
-            console.log('Модель предзагружена');
+            log('✅ Модель предзагружена успешно', 'success');
         }).catch(err => {
             console.warn('Не удалось предзагрузить модель:', err);
+            log(`⚠️ Не удалось предзагрузить модель: ${err.message}`, 'warn');
             hideStatus();
         });
     });
